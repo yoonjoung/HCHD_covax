@@ -1,0 +1,686 @@
+---
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+---
+```{r intro, echo=FALSE, results="hide"}
+##### MUST CHANGE MANUALLY TWO LINES: 38 & 42 (date of data) #####
+knitr::opts_chunk$set(echo=FALSE, 
+                      message=FALSE, 
+                      comment = "", 
+                      warning=FALSE, 
+                      results="hide") 
+#knitr::opts_knit$set(root.dir = "C:/Users/yoonjoung.choi/Dropbox/0 iSquared/iSquared_Harfod/1.COVID19/")
+knitr::opts_knit$set(root.dir = "C:/Users/yoonjoung choi/Dropbox/0 iSquared/iSquared_Harfod/1.COVID19/")
+
+date<-as.Date(Sys.time(	), format='%d%b%Y')
+time<-Sys.time()
+
+suppressWarnings(suppressMessages(library(dplyr)))
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(data.table)))
+
+suppressWarnings(suppressMessages(library(readxl)))
+suppressWarnings(suppressMessages(library(Matrix))) 
+suppressWarnings(suppressMessages(library(stringr)))
+suppressWarnings(suppressMessages(library(lubridate)))
+suppressWarnings(suppressMessages(library(zoo)))
+
+suppressWarnings(suppressMessages(library(ggplot2)))
+suppressWarnings(suppressMessages(library(plotly)))
+suppressWarnings(suppressMessages(library(knitr)))  
+```
+
+# COVID-19 vaccine coverage in Harford County, MD
+
+(Page updated at `r time`)   
+Data as of: 03/23/2021, from Maryland Department of Health. See Annex for detailed note about the data.    
+
+```{r dta_import}
+#Immunization level data 
+#dtaimmunet<-read_excel("C:/Users/yoonjoung.choi/Documents/dta_immunet/COVID-19 Administrations - Harford 03232021.xlsx")
+dtaimmunet<-read_excel("C:/Users/yoonjoung choi/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 03232021.xlsx")
+
+
+dim(dtaimmunet)
+length(unique(dtaimmunet$CLIENT_ID))
+```
+
+```{r dta_checkclean}
+# Check duplicates, total number of vaccination, etc.  
+dta<-as.data.frame(dtaimmunet) %>% 
+    mutate(vdate	=as.Date(VACCINATION_DATE, "%d-%b-%Y"))%>%
+    arrange(CLIENT_ID, vdate)%>%
+    group_by(CLIENT_ID)%>% 
+    mutate(
+        dup=CLIENT_ID==lag(CLIENT_ID)  &
+            vdate==lag(vdate), #duplicate
+        totalnumber=n(), #Total number of vaccinations received per person
+        dosenumber=row_number() #Vaccine dose number per person, should be 1-2 
+        )%>%
+    ungroup()
+
+    table(dta$dup)    
+    table(dta$totalnumber)
+    table(dta$dosenumber)
+    
+#check people who got more than 2 doses, why??? 
+    temp<-dta%>%
+        filter(totalnumber>2)%>% 
+        select(CLIENT_ID, VACCINATION_DATE, BIRTH_DATE, SEX_CODE, MANUFACTURER)
+    head(temp, 10)
+    
+#check vaccine date AND replace incorrect date with missing
+    summary(dta$vdate)
+    temp<-dta%>%
+        filter(vdate < as.Date("2020-12-01"))%>% 
+        select(CLIENT_ID, VACCINATION_DATE, BIRTH_DATE, SEX_CODE, MANUFACTURER,
+               DATE_ENTERED1, LAST_UPDATED_DATE1)
+    head(temp, 10)    
+    
+nincorrectvdate<-nrow(temp)
+
+dta<-dta%>%
+    mutate(
+        vdate = replace(vdate, vdate < as.Date("2020-12-01"), NA)
+    ) 
+    
+```    
+
+```{r dta_processing}
+dta<-dta%>%
+    arrange(CLIENT_ID, VACCINATION_DATE)%>%
+    mutate(
+                
+        bday	=as.Date(BIRTH_DATE, "%d-%b-%Y"), 
+        bdaybase   =as.Date("14-JAN-2021", "%d-%b-%Y"),  
+        today   = as.Date(Sys.time(	), format='%d%b%Y'), 
+        age     =floor((bdaybase-bday)/365), #AGE as of January 14 in complete years
+        
+        complete = (totalnumber>=2 & (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") | 
+                    totalnumber==1 & MANUFACTURER=="JSN"), #completed required doses
+        waiting1 = complete==0 & 
+                (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") & 
+                today-vdate<28, #waiting for MOD/PFR 2nd dose (<=28)
+        waiting2 = complete==0 & 
+                (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") & 
+                (today-vdate>=28 & today-vdate<=41), #waiting for MOD/PFR 2nd dose (29-42)   
+        late = complete==0 & 
+                (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") & 
+                today-vdate>=42, #late for MOD/PFR 2nd dose
+            
+        complete=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, complete),
+        waiting1=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, waiting1),
+        waiting2=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, waiting2),
+        late    =ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, late),
+
+	    nhwhite = ETHNICITY_CODE=="2186-5" & RACE_CODE=="2106-3", #Non-Hispanic White"
+	    nhblack = ETHNICITY_CODE=="2186-5" & RACE_CODE=="2054-5", #Non-Hispanic Black
+	    nhasian = ETHNICITY_CODE=="2186-5" & RACE_CODE=="2028-9", #Non-Hispanic Asian
+	    hispanic = ETHNICITY_CODE=="2135-2", #Hispanic 
+	
+    	zipcode17 = 
+    		ZIP_CODE=="21001" |
+    		ZIP_CODE=="21005" |
+    		ZIP_CODE=="21009" |
+    		ZIP_CODE=="21014" |
+    		ZIP_CODE=="21015" |
+    		ZIP_CODE=="21017" |
+    		ZIP_CODE=="21028" |
+    		ZIP_CODE=="21034" |
+    		ZIP_CODE=="21040" |
+    		ZIP_CODE=="21047" |
+    		ZIP_CODE=="21050" |
+    		ZIP_CODE=="21078" |
+    		ZIP_CODE=="21084" |
+    		ZIP_CODE=="21085" |
+    		ZIP_CODE=="21132" |
+    		ZIP_CODE=="21154" |
+    		ZIP_CODE=="21160"  #"17 non-border zipcode areas"
+        
+    ) 
+```
+
+##1. Coverage: overall and by background characteristics  
+###1.1 One or more doses
+```{r coverage_CUM}
+dtafirst<-dta%>%filter(dosenumber==1)
+    
+dta1<-dtafirst%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Total")
+
+dta2<-dtafirst%>%filter(nhwhite==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic White")
+dta3<-dtafirst%>%filter(nhblack==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic Black")
+dta4<-dtafirst%>%filter(nhasian==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic Asian")
+dta5<-dtafirst%>%filter(hispanic==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Hispanic")
+
+dta6<-dtafirst%>%filter(SEX_CODE=="F")%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Female")
+dta7<-dtafirst%>%filter(SEX_CODE=="M")%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Male")
+
+dta8<-dtafirst%>%filter(age>=75)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="75+")
+dta9<-dtafirst%>%filter(age>=65 & age<75)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="65-74")
+
+dta10<-dtafirst%>%filter(age>=65 & nhwhite==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="White 65+")
+dta11<-dtafirst%>%filter(age>=65 & nhblack==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Black 65+")
+#dta12<-dtafirst%>%filter(age>=65 & nhasian==1)%>%
+#    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+#    mutate(group="Asian 65+")
+dta12<-dtafirst%>%filter(age>=65 & hispanic==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Hispanic 65+")
+
+dtasummary<-rbind(dta1, dta2, dta3, dta4, dta5, 
+                  dta6, dta7, dta8, dta9, dta10, dta11, dta12)%>%
+    rename(count=dosenumber)
+
+```
+
+```{r coverage_7day}
+dtafirst7day<-dta%>%filter(dosenumber==1)%>%filter(today - vdate<7)
+    
+dta1<-dtafirst7day%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Total")
+
+dta2<-dtafirst7day%>%filter(nhwhite==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic White")
+dta3<-dtafirst7day%>%filter(nhblack==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic Black")
+dta4<-dtafirst7day%>%filter(nhasian==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic Asian")
+dta5<-dtafirst7day%>%filter(hispanic==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Hispanic")
+
+dta6<-dtafirst7day%>%filter(SEX_CODE=="F")%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Female")
+dta7<-dtafirst7day%>%filter(SEX_CODE=="M")%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Male")
+
+dta8<-dtafirst7day%>%filter(age>=75)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="75+")
+dta9<-dtafirst7day%>%filter(age>=65 & age<75)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="65-74")
+
+dta10<-dtafirst7day%>%filter(age>=65 & nhwhite==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="White 65+")
+dta11<-dtafirst7day%>%filter(age>=65 & nhblack==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Black 65+")
+#dta12<-dtafirst7day%>%filter(age>=65 & nhasian==1)%>%
+#    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+#    mutate(group="Asian 65+")
+dta12<-dtafirst7day%>%filter(age>=65 & hispanic==1)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Hispanic 65+")
+
+dtasummary7day<-rbind(dta1, dta2, dta3, dta4, dta5, 
+                  dta6, dta7, dta8, dta9, dta10, dta11, dta12)%>%
+    rename(count7day=dosenumber)
+```
+
+```{r coverage_pop}
+dtasummary<-left_join(dtasummary, dtasummary7day, by="group")%>%
+    mutate(
+        pop=NA, 
+        pop = replace(pop, group=="Total", 	255441	),
+        pop = replace(pop, group=="Non-Hispanic White", 	191517	),
+        pop = replace(pop, group=="Non-Hispanic Black", 	35826	),
+        pop = replace(pop, group=="Non-Hispanic Asian", 	7299	),
+        pop = replace(pop, group=="Hispanic", 	12215	),
+        pop = replace(pop, group=="Female", 	130676	),
+        pop = replace(pop, group=="Male", 	124765	),
+        pop = replace(pop, group=="75+", 	17417	),
+        pop = replace(pop, group=="65-74", 	24869	),
+        pop = replace(pop, group=="White 65+", 	36064	),
+        pop = replace(pop, group=="Black 65+", 	5666	),
+        pop = replace(pop, group=="Hispanic 65+", 	555	),
+
+        coverage = round(100*count/pop), 
+        coverage7day = round(100*count7day/pop, 1)
+
+    )
+```
+
+```{r table_coverage, results="asis"}
+setcolorder(dtasummary, c("group", "count", "coverage", "count7day", "coverage7day"))
+
+kable(dtasummary[, 1:5], caption = "COVID-19 vaccine coverage, one or more doses (number of people and percent of population): cumulative and past 7 days")
+```
+
+###1.2 By status
+```{r status}
+dtafirst<-dta%>%filter(dosenumber==1) #person-level data
+    
+dta1<-dtafirst%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Total")
+
+dta2<-dtafirst%>%filter(nhwhite==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic White")
+dta3<-dtafirst%>%filter(nhblack==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic Black")
+dta4<-dtafirst%>%filter(nhasian==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Non-Hispanic Asian")
+dta5<-dtafirst%>%filter(hispanic==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Hispanic")
+
+dta6<-dtafirst%>%filter(SEX_CODE=="F")%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Female")
+dta7<-dtafirst%>%filter(SEX_CODE=="M")%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Male")
+
+dta8<-dtafirst%>%filter(age>=75)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="75+")
+dta9<-dtafirst%>%filter(age>=65 & age<75)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="65-74")
+
+dta10<-dtafirst%>%filter(age>=65 & nhwhite==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="White 65+")
+dta11<-dtafirst%>%filter(age>=65 & nhblack==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Black 65+")
+#dta12<-dtafirst%>%filter(age>=65 & nhasian==1)%>%
+#    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+#    mutate(group="Asian 65+")
+dta12<-dtafirst%>%filter(age>=65 & hispanic==1)%>%
+    summarize_at(vars(dosenumber, complete, waiting1, waiting2, late), funs(sum(., na.rm = TRUE)))%>%
+    mutate(group="Hispanic 65+")
+
+dtasummarystatus<-rbind(dta1, dta2, dta3, dta4, dta5, 
+                  dta6, dta7, dta8, dta9, dta10, dta11, dta12)%>%
+    rename(total=dosenumber)
+
+```
+
+```{r status_pop}
+dtasummarystatus<-dtasummarystatus%>%
+    mutate(
+        pop=NA, 
+        pop = replace(pop, group=="Total", 	255441	),
+        pop = replace(pop, group=="Non-Hispanic White", 	191517	),
+        pop = replace(pop, group=="Non-Hispanic Black", 	35826	),
+        pop = replace(pop, group=="Non-Hispanic Asian", 	7299	),
+        pop = replace(pop, group=="Hispanic", 	12215	),
+        pop = replace(pop, group=="Female", 	130676	),
+        pop = replace(pop, group=="Male", 	124765	),
+        pop = replace(pop, group=="75+", 	17417	),
+        pop = replace(pop, group=="65-74", 	24869	),
+        pop = replace(pop, group=="White 65+", 	36064	),
+        pop = replace(pop, group=="Black 65+", 	5666	),
+        pop = replace(pop, group=="Hispanic 65+", 	555	),
+
+        #coverage = round(100*count/pop), 
+        #coverage7day = round(100*count7day/pop, 1)
+        pcttotal = round(100*total/pop), 
+        pctcomplete = round(100*complete/pop), 
+        pctwaiting1 = round(100*waiting1/pop), 
+        pctwaiting2 = round(100*waiting2/pop), 
+        pctlate = round(100*late/pop, 1)
+    )
+```
+
+```{r table_status_count, results="asis"}
+setcolorder(dtasummarystatus, c("group", "total", "complete", "waiting1", "waiting2", "late"))
+
+kable(dtasummarystatus[, 1:6], caption = "COVID-19 vaccine coverage by status (number of people): complete, waiting adequate (<28 days), waiting late (28-41 days), vs. late")
+```
+Note:  
+1. Complete: either two doses of Moderna or Pfizer, or one dose of J&J vaccine  
+2. Sum of the number of complete, waiting1, waiting2, and late may not be same with the total number of people, due to a small number of cases with missing information on manufacture and/or vaccination date.   
+
+```{r table_status_pct, results="asis"}
+setcolorder(dtasummarystatus, c("group", "pcttotal", "pctcomplete", "pctwaiting1", "pctwaiting2", "pctlate"))
+
+kable(dtasummarystatus[, 1:6], caption = "COVID-19 vaccine coverage by status (percent of population): complete, waiting adequate (<28 days), waiting late (28-41 days), vs. late")
+```
+Note:  
+1. Complete: either two doses of Moderna or Pfizer, or one dose of J&J vaccine
+
+
+```{r defaulters} 
+dtadefaulter<-dta%>%
+    filter(waiting2==1 | late==1)%>% #keep late or almost late folks 
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>% #Keep only HC residents
+    mutate(
+        status= " " ,
+        status= replace(status, late==1, "late"), 
+        status= replace(status, waiting2==1, "waiting late"), 
+    
+        race= " ", 
+        race= replace(race, nhwhite==1, "NH White"), 
+        race= replace(race, nhblack==1, "NH Black"), 
+        race= replace(race, nhasian==1, "NH Asian"), 
+        race= replace(race, hispanic==1, "Hispanic"), 
+        
+        days_since_first = today - vdate
+        )%>%
+    arrange(status, days_since_first)
+    
+setcolorder(dtadefaulter, c("status",  "days_since_first", "race", "age"))
+colnames(dtadefaulter)
+
+dtadefaulter<-dtadefaulter[, 1:33]
+
+write.csv(dtadefaulter, paste0("HCHD_defaulters_", date, ".csv"))
+
+```
+
+##2. Coverage by zipcode among Harford county residents  
+###2.1 One or more doses 
+```{r coverage_Zip}
+dtasummaryZip<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    filter(zipcode17==1)%>%
+    group_by(ZIP_CODE)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    rename(count=dosenumber)
+
+dtasummaryZip7day<-dta%>%
+    filter(dosenumber==1)%>%filter(today - vdate<7)%>%
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    filter(zipcode17==1)%>%
+    group_by(ZIP_CODE)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    rename(count7day=dosenumber)
+
+dtasummaryZip<-merge(dtasummaryZip, dtasummaryZip7day, by = "ZIP_CODE" )%>%
+    mutate(
+	    pop = NA, #"population, by zipcode"
+        pop = replace(pop, ZIP_CODE=="21001"	 , 	24752	),
+        pop = replace(pop, ZIP_CODE=="21005"	 , 	2872	),
+        pop = replace(pop, ZIP_CODE=="21009"	 , 	29905	),
+        pop = replace(pop, ZIP_CODE=="21013"	 , 	4768	),
+        pop = replace(pop, ZIP_CODE=="21014"	 , 	36538	),
+        pop = replace(pop, ZIP_CODE=="21015"	 , 	29199	),
+        pop = replace(pop, ZIP_CODE=="21017"	 , 	6983	),
+        pop = replace(pop, ZIP_CODE=="21028"	 , 	2783	),
+        pop = replace(pop, ZIP_CODE=="21034"	 , 	3483	),
+        pop = replace(pop, ZIP_CODE=="21040"	 , 	24166	),
+        pop = replace(pop, ZIP_CODE=="21047"	 , 	12266	),
+        pop = replace(pop, ZIP_CODE=="21050"	 , 	18123	),
+        pop = replace(pop, ZIP_CODE=="21078"	 , 	18366	),
+        pop = replace(pop, ZIP_CODE=="21082"	 , 	656	),
+        pop = replace(pop, ZIP_CODE=="21084"	 , 	7603	),
+        pop = replace(pop, ZIP_CODE=="21085"	 , 	16055	),
+        pop = replace(pop, ZIP_CODE=="21087"	 , 	5394	),
+        pop = replace(pop, ZIP_CODE=="21111"	 , 	5387	),
+        pop = replace(pop, ZIP_CODE=="21132"	 , 	3232	),
+        pop = replace(pop, ZIP_CODE=="21154"	 , 	5804	),
+        pop = replace(pop, ZIP_CODE=="21161"	 , 	5601	),
+        pop = replace(pop, ZIP_CODE=="21160"	 , 	2933	),
+        
+        coverage = round(100*count/pop), 
+        coverage7day = round(100*count7day/pop, 1)
+    )
+
+setcolorder(dtasummaryZip, c("ZIP_CODE", "count", "coverage", "count7day", "coverage7day"))
+
+```
+
+```{r coveragedtaformap}
+#####1. Get coverage data ready
+# Full list of zipcode in Harford
+HCzipcode <- read_excel("C:/Users/yoonjoung choi/Dropbox/0 iSquared/iSquared_Harfod/dta_demobasic/HCzipcode.xlsx")
+names(HCzipcode)<-c("area", "ZCTA5CE10", "border") 
+
+# Coverage data calculated above
+dtamap<- dtasummaryZip%>%
+    select(ZIP_CODE, coverage)%>%
+    rename(ZCTA5CE10=ZIP_CODE)%>%
+    mutate(ZCTA5CE10=as.numeric(ZCTA5CE10))
+
+# Full list of zipcode merged with coverage data 
+dtamap<-left_join(HCzipcode, dtamap, by = "ZCTA5CE10")
+
+#####2. tigris: Download a shapefile (shp,gpkg,geojson...)
+library(sf) #Overall handling of sf objects
+library(tigris) #For downloading the zipcode map
+options(tigris_use_cache = TRUE)
+geo <- st_as_sf(zctas(cb = TRUE, starts_with = dta$ZCTA5CE10))
+
+#Overall shape of USA states
+states <- st_as_sf(states(cb=TRUE))
+
+#For plotting, all the maps should have the same crs
+states=st_transform(states,st_crs(geo))
+
+#####3. Now Merge MY coverage data
+dta.sf=merge(geo,dtamap)
+```
+
+```{r plot_coveragemap, results='asis'}
+#4. Plotting
+library(cartography) #Plotting maps package
+
+par(mar=c(1,1,1,1))
+#ghostLayer(dta.sf)
+
+#plot(st_geometry(states), add=TRUE)
+
+choroLayer(dta.sf,
+           var="coverage",
+           add=FALSE,
+           border = "black",
+           method = "quantile", nclass = 8,
+           col = carto.pal(pal1="red.pal", n1=2,
+                           pal2="blue.pal", n2=6),
+           legend.title.txt = "Percent",
+           legend.title.cex = 0.8, 
+           legend.values.cex = 0.8,
+           legend.pos = "bottomleft",
+           legend.frame = FALSE)
+
+layoutLayer(title = "COVID-19 vaccine coverage by zip code (one ore more doses): Harford County",
+            col="white",
+            coltitle = "black",
+            scale = FALSE,
+            frame = FALSE
+            )
+```
+
+```{r table_coverageZip, results="asis"}
+kable(dtasummaryZip[, 1:5], caption = "COVID-19 vaccine coverage, one or more doses by zip code (number of people and percent of population): cumulative and past 7 days")
+```
+
+###2.2 Complete doses
+```{r coverage2_Zip}
+dtasummaryZip<-dta%>%
+    filter(complete==1)%>%
+    mutate(dosenumber=1)%>% #replace dosenumber to 1 in all rows
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    filter(zipcode17==1)%>%
+    group_by(ZIP_CODE)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    rename(count=dosenumber)
+
+dtasummaryZip7day<-dta%>%
+    filter(complete==1)%>%
+    mutate(dosenumber=1)%>% #replace dosenumber to 1 in all rows
+    filter(today - vdate<7)%>%
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    filter(zipcode17==1)%>%
+    group_by(ZIP_CODE)%>%
+    summarize_at(vars(dosenumber), funs(sum(., na.rm = TRUE)))%>%
+    rename(count7day=dosenumber)
+
+dtasummaryZip<-merge(dtasummaryZip, dtasummaryZip7day, by = "ZIP_CODE" )%>%
+    mutate(
+	    pop = NA, #"population, by zipcode"
+        pop = replace(pop, ZIP_CODE=="21001"	 , 	24752	),
+        pop = replace(pop, ZIP_CODE=="21005"	 , 	2872	),
+        pop = replace(pop, ZIP_CODE=="21009"	 , 	29905	),
+        pop = replace(pop, ZIP_CODE=="21013"	 , 	4768	),
+        pop = replace(pop, ZIP_CODE=="21014"	 , 	36538	),
+        pop = replace(pop, ZIP_CODE=="21015"	 , 	29199	),
+        pop = replace(pop, ZIP_CODE=="21017"	 , 	6983	),
+        pop = replace(pop, ZIP_CODE=="21028"	 , 	2783	),
+        pop = replace(pop, ZIP_CODE=="21034"	 , 	3483	),
+        pop = replace(pop, ZIP_CODE=="21040"	 , 	24166	),
+        pop = replace(pop, ZIP_CODE=="21047"	 , 	12266	),
+        pop = replace(pop, ZIP_CODE=="21050"	 , 	18123	),
+        pop = replace(pop, ZIP_CODE=="21078"	 , 	18366	),
+        pop = replace(pop, ZIP_CODE=="21082"	 , 	656	),
+        pop = replace(pop, ZIP_CODE=="21084"	 , 	7603	),
+        pop = replace(pop, ZIP_CODE=="21085"	 , 	16055	),
+        pop = replace(pop, ZIP_CODE=="21087"	 , 	5394	),
+        pop = replace(pop, ZIP_CODE=="21111"	 , 	5387	),
+        pop = replace(pop, ZIP_CODE=="21132"	 , 	3232	),
+        pop = replace(pop, ZIP_CODE=="21154"	 , 	5804	),
+        pop = replace(pop, ZIP_CODE=="21161"	 , 	5601	),
+        pop = replace(pop, ZIP_CODE=="21160"	 , 	2933	),
+        
+        coverage = round(100*count/pop), 
+        coverage7day = round(100*count7day/pop, 1)
+    )
+
+setcolorder(dtasummaryZip, c("ZIP_CODE", "count", "coverage", "count7day", "coverage7day"))
+
+```
+
+```{r coverage2dtaformap}
+#####1. Get coverage data ready
+# Full list of zipcode in Harford
+HCzipcode <- read_excel("C:/Users/yoonjoung choi/Dropbox/0 iSquared/iSquared_Harfod/dta_demobasic/HCzipcode.xlsx")
+names(HCzipcode)<-c("area", "ZCTA5CE10", "border") 
+
+# Coverage data calculated above
+dtamap<- dtasummaryZip%>%
+    select(ZIP_CODE, coverage)%>%
+    rename(ZCTA5CE10=ZIP_CODE)%>%
+    mutate(ZCTA5CE10=as.numeric(ZCTA5CE10))
+
+# Full list of zipcode merged with coverage data 
+dtamap<-left_join(HCzipcode, dtamap, by = "ZCTA5CE10")
+
+#####2. tigris: Download a shapefile (shp,gpkg,geojson...)
+library(sf) #Overall handling of sf objects
+library(tigris) #For downloading the zipcode map
+options(tigris_use_cache = TRUE)
+geo <- st_as_sf(zctas(cb = TRUE, starts_with = dta$ZCTA5CE10))
+
+#Overall shape of USA states
+states <- st_as_sf(states(cb=TRUE))
+
+#For plotting, all the maps should have the same crs
+states=st_transform(states,st_crs(geo))
+
+#####3. Now Merge MY coverage data
+dta.sf=merge(geo,dtamap)
+```
+
+```{r plot_coverage2map, results='asis'}
+#4. Plotting
+library(cartography) #Plotting maps package
+
+par(mar=c(1,1,1,1))
+#ghostLayer(dta.sf)
+
+#plot(st_geometry(states), add=TRUE)
+
+choroLayer(dta.sf,
+           var="coverage",
+           add=FALSE,
+           border = "black",
+           method = "quantile", nclass = 8,
+           col = carto.pal(pal1="red.pal", n1=2,
+                           pal2="blue.pal", n2=6),
+           legend.title.txt = "Percent",
+           legend.title.cex = 0.8, 
+           legend.values.cex = 0.8,
+           legend.pos = "bottomleft",
+           legend.frame = FALSE)
+
+layoutLayer(title = "COVID-19 vaccine coverage by zip code (complete): Harford County",
+            col="white",
+            coltitle = "black",
+            scale = FALSE,
+            frame = FALSE
+            )
+
+
+```
+Note:  
+1. Complete: either two doses of Moderna or Pfizer, or one dose of J&J vaccine
+
+```{r table_coverage2Zip, results='asis'}
+kable(dtasummaryZip[, 1:5], caption = "COVID-19 vaccine coverage, complete by zip code (number of people and percent of population): cumulative and past 7 days")
+```
+Note:  
+1. Complete: either two doses of Moderna or Pfizer, or one dose of J&J vaccine
+
+##Annex: Detailed description of the data
+```{r}
+nobs<-nrow(dta)
+npersons<-length(unique(dta$CLIENT_ID))
+vdatefirst<-min(as.Date.POSIXct(dta$vdate, "1970-01-01"))
+vdatelast<-max(as.Date.POSIXct(dta$vdate, "1970-01-01"))
+
+nhcresidents<-dta%>%filter(dosenumber==1)%>%
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    nrow()
+
+nzipcode17<-dta%>%filter(dosenumber==1)%>%
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    filter(zipcode17==1)%>%
+    nrow()
+```
+As of `r date`  
+- A total of `r nobs` vaccination cases from `r npersons` people.        
+- A total of `r nhcresidents` Harford county residents and `r nzipcode17` living in the 17 zip code areas are included in the data.   
+- Vaccination date ranges from `r vdatefirst` to `r vdatelast`.       
+
+- Number of vaccination cases with missing entry or likely errors (i.e., implausible values)    
+* Missing race/ethnicity:    
+* Missing age:   
+* Missing sex:   
+* Likely error in vaccine date: `r nincorrectvdate`   
+
+---
+
+<p style="color:gray">
+See [GitHub](https://github.com/yoonjoung/COVID19_FlattenedCurve) for data, code, and more information. 
+For typos, errors, and questions, contact me at [www.isquared.global](https://www.iSquared.global/YJ). 
+
+_Making Data Delicious, One Byte at a Time_</p>
