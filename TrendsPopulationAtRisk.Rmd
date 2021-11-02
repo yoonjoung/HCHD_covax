@@ -1,0 +1,1531 @@
+---
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+---
+```{r intro, echo=FALSE, results="hide"}
+##### MUST CHANGE MANUALLY ONE LINE EACH TIME: 49 (date of vaccine data) #####
+knitr::opts_chunk$set(echo=FALSE, 
+                      message=FALSE, 
+                      comment = "", 
+                      warning=FALSE, 
+                      results="hide") 
+
+##### SET your working directory - only once, and you're set #####
+#knitr::opts_knit$set(root.dir = "C:/Users/yoonjoung.choi/Dropbox/0 iSquared/iSquared_Harfod/1.COVID19/")
+knitr::opts_knit$set(root.dir = "~/Dropbox/0 iSquared/iSquared_Harfod/1.COVID19/")
+
+Sys.setenv(TZ='EST')
+time<-Sys.time()
+date<-as.Date(Sys.time(	), format='%d%b%Y')
+
+suppressWarnings(suppressMessages(library(dplyr)))
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(data.table)))
+suppressWarnings(suppressMessages(library(haven)))
+suppressWarnings(suppressMessages(library(readxl)))
+
+suppressWarnings(suppressMessages(library(Matrix))) 
+suppressWarnings(suppressMessages(library(stringr)))
+suppressWarnings(suppressMessages(library(lubridate)))
+suppressWarnings(suppressMessages(library(zoo)))
+
+suppressWarnings(suppressMessages(library(ggplot2)))
+suppressWarnings(suppressMessages(library(plotly)))
+suppressWarnings(suppressMessages(library(knitr)))  
+suppressWarnings(suppressMessages(library(RColorBrewer))) 
+```
+
+(Page updated at `r time`)   
+
+Inspired by a Washington Post article: [The unseen covid-19 risk for unvaccinated people](https://www.washingtonpost.com/health/interactive/2021/covid-rates-unvaccinated-people/) 
+
+Data are from Maryland Department of Health for vaccination (Immunet, as of `r date`) and COPVID-19 cases (as of `r date`).  
+
+```{r dta_import}
+#Immunization level data 
+dtaimmunetNEW<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 09072021.xlsx")
+#dtaimmunet<-read_excel("C:/Users/yoonjoung.choi/Documents/dta_immunet/COVID-19 Administrations - Harford 03232021.xlsx")
+# Starting from May 3, the data has only vaccination on March 1 or later!!! 
+
+#Immunization level data - bring data prior to March 1 
+dtaimmunetOLD<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 04302021.xlsx")%>%
+    mutate(vdate = as.Date(VACCINATION_DATE, "%d-%b-%Y"))%>%
+    filter(vdate < as.Date("2021-03-01"))%>% #older vaccinations before March 1
+    select(-vdate)
+
+dim(dtaimmunetNEW)
+dim(dtaimmunetOLD)
+
+dtaimmunet<-rbind(dtaimmunetNEW, dtaimmunetOLD)
+dim(dtaimmunet)
+
+#dtaimmunet<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 04292021.xlsx")
+
+length(unique(dtaimmunet$CLIENT_ID))
+```
+
+```{r dta_checkclean}
+# Check duplicates, total number of vaccination, etc.  
+dta<-as.data.frame(dtaimmunet) %>% 
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    mutate(vdate	=as.Date(VACCINATION_DATE, "%d-%b-%Y"))%>%
+    arrange(CLIENT_ID, vdate)%>%
+    group_by(CLIENT_ID)%>% 
+    mutate(
+        dup=CLIENT_ID==lag(CLIENT_ID)  &
+            vdate==lag(vdate), #duplicate
+        totalnumber=n(), #Total number of vaccinations received per person
+        dosenumber=row_number() #Vaccine dose number per person, should be 1-2 
+        )%>%
+    ungroup()
+
+    table(dta$dup)    
+    table(dta$totalnumber)
+    table(dta$dosenumber)
+    
+#check people who got more than 2 doses, why??? 
+    temp<-dta%>%
+        filter(totalnumber>2)%>% 
+        select(CLIENT_ID, VACCINATION_DATE, BIRTH_DATE, SEX_CODE, MANUFACTURER)
+    head(temp, 10)
+    
+#check vaccine date AND replace incorrect date with missing
+    summary(dta$vdate)
+    temp<-dta%>%
+        filter(vdate < as.Date("2020-12-14"))%>% #first COVID vaccines in the US outside clinical trials was on 12/13/2020
+        select(CLIENT_ID, VACCINATION_DATE, BIRTH_DATE, SEX_CODE, MANUFACTURER,
+               DATE_ENTERED1, LAST_UPDATED_DATE1)
+    head(temp, 10)    
+    
+nincorrectvdate<-nrow(temp)
+
+dta<-dta%>%
+    mutate(
+        vdate = replace(vdate, vdate < as.Date("2020-12-14"), NA)
+    ) 
+    
+```    
+
+```{r dta_processing}
+dta<-dta%>%
+    arrange(CLIENT_ID, VACCINATION_DATE)%>%
+    mutate(
+                
+        bday	=as.Date(BIRTH_DATE, "%d-%b-%Y"), 
+        bdaybase=as.Date("14-JAN-2021", "%d-%b-%Y"),  
+        today   =as.Date(Sys.time(	), format='%d%b%Y'), 
+        #today   =as.Date("2021-04-15", format="%Y-%m-%d"), 
+        #to cross check with the March30 outreach output using March 29 data... 
+        age     =floor((bdaybase-bday)/365), #AGE as of January 14 in complete years
+        #age     =floor((vdate-bday)/365), #AGE at the first shot
+        
+        complete = (totalnumber>=2 & (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") | 
+                    totalnumber>=1 & MANUFACTURER=="JSN"), #completed required doses
+        waiting1 = complete==0 & 
+                (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") & 
+                today-vdate<28, #waiting for MOD/PFR 2nd dose (<=28)
+        waiting2 = complete==0 & 
+                (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") & 
+                (today-vdate>=28 & today-vdate<=41), #waiting for MOD/PFR 2nd dose (29-42)   
+        late = complete==0 & 
+                (MANUFACTURER=="MOD" | MANUFACTURER=="PFR") & 
+                today-vdate>=42, #late for MOD/PFR 2nd dose
+            
+        complete=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, complete),
+        waiting1=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, waiting1),
+        waiting2=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, waiting2),
+        late    =ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, late),
+
+        #https://phinvads.cdc.gov/vads/ViewValueSet.action?oid=2.16.840.1.114222.4.11.6065
+        #https://phinvads.cdc.gov/vads/ViewValueSet.action?oid=2.16.840.1.114222.4.11.837
+        
+	    nhwhite = ETHNICITY_CODE=="2186-5" & RACE_CODE=="2106-3", #Non-Hispanic White"
+	    nhblack = ETHNICITY_CODE=="2186-5" & RACE_CODE=="2054-5", #Non-Hispanic Black
+	    nhasian = ETHNICITY_CODE=="2186-5" & RACE_CODE=="2028-9", #Non-Hispanic Asian
+	    hispanic = ETHNICITY_CODE=="2135-2", #Hispanic 
+	
+        race= "", 
+        race= replace(race, nhwhite==1, "NH White"), 
+        race= replace(race, nhblack==1, "NH Black"), 
+        race= replace(race, nhasian==1, "NH Asian"), 
+        race= replace(race, hispanic==1, "Hispanic"), 
+        
+        HCHD=grepl('Harford County Health Department', ADMINISTERING_ORG_NAME),  
+        HCHD=as.character(HCHD), 
+        HCHD=replace(HCHD, HCHD=="TRUE", "HCHD"),
+        HCHD=replace(HCHD, HCHD=="FALSE", "non HCHD"),
+        
+    	zipcode17 = 
+    		ZIP_CODE=="21001" |
+    		ZIP_CODE=="21005" |
+    		ZIP_CODE=="21009" |
+    		ZIP_CODE=="21014" |
+    		ZIP_CODE=="21015" |
+    		ZIP_CODE=="21017" |
+    		ZIP_CODE=="21028" |
+    		ZIP_CODE=="21034" |
+    		ZIP_CODE=="21040" |
+    		ZIP_CODE=="21047" |
+    		ZIP_CODE=="21050" |
+    		ZIP_CODE=="21078" |
+    		ZIP_CODE=="21084" |
+    		ZIP_CODE=="21085" |
+    		ZIP_CODE=="21132" |
+    		ZIP_CODE=="21154" |
+    		ZIP_CODE=="21160",  #"17 non-border zipcode areas"
+        
+        zipcode22 = 
+            zipcode17==TRUE |
+            ZIP_CODE=="21013" |
+            ZIP_CODE=="21082" |
+            ZIP_CODE=="21087" |
+            ZIP_CODE=="21111" |
+            ZIP_CODE=="21161"
+    ) 
+```
+
+```{r dta_processing_problemid}
+#vaccinations where actually same person was given two CLIENT_ID
+temp<-dta%>%filter(complete==0)%>%
+    mutate(
+        LAST_NAME = tolower(LAST_NAME), 
+        STREET_ADDRESS_LINE = tolower(STREET_ADDRESS_LINE), 
+        id = paste(BIRTH_DATE, SEX_CODE, LAST_NAME,
+                   STREET_ADDRESS_LINE)
+        )%>%
+    group_by(id)%>%
+    mutate(n = n())%>%
+    ungroup()
+    
+    table(temp$n)
+
+temp<-temp%>%    
+    mutate(problemid = n>=2)%>%
+    mutate_if(is.logical, as.numeric)%>%
+    filter(problemid==1)%>%
+    select(CLIENT_ID, vdate, problemid)
+
+dim(temp)
+dim(dta)
+
+dta<-left_join(dta, temp, by=c("CLIENT_ID", "vdate"))
+dim(dta)
+dim(dtaimmunet)
+
+table(dta$problemid)
+
+dta<-dta%>%mutate(problemid=replace(problemid, is.na(problemid)==TRUE, 0))
+table(dta$problemid)
+```
+
+---
+
+### 1. Trends of population at risk   
+
+```{r dta_pop_adjust}
+temp1<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    group_by(vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(first=obs)
+
+temp2<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER=="JSN" & dosenumber==1) | 
+               (MANUFACTURER!="JSN" & dosenumber==2))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    group_by(vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(complete=obs)
+
+dtapopadjust<-left_join(temp1, temp2, by="vdate")%>%
+    rename(date=vdate)%>%
+    mutate(
+        complete=ifelse(is.na(complete)==TRUE, 0, complete), 
+        cum_first = cumsum(first), 
+        cum_complete = cumsum(complete), 
+        
+        pop=255441, 
+        
+        pop_adj_WAPO=pop - (cum_first*0.85),
+        #https://www.washingtonpost.com/health/interactive/2021/covid-rates-unvaccinated-people/
+        pop_adj_first=pop - (lag(cum_first, n=2) * 0.75),
+        pop_adj_comp=pop - (lag(cum_complete, n=2) * 0.85)
+        #real life effectiveness 80% after 14 days of the first vaccination 
+        #real life effectiveness 90% after 14 days of complete vaccination 
+        #JNJ efficacy 66%
+        #https://www.cdc.gov/mmwr/volumes/70/wr/mm7013e3.htm?s_cid=mm7013e3_w
+        )%>%
+    
+    select(date, starts_with("pop"))%>%
+    mutate(
+        pop_adj_first=ifelse(is.na(pop_adj_first)==TRUE, pop, pop_adj_first),
+        pop_adj_comp =ifelse(is.na(pop_adj_comp)==TRUE, pop, pop_adj_comp), 
+        
+        adj_WAPO = round(pop / pop_adj_WAPO, 3),
+        adj_first = round(pop / pop_adj_first, 3),
+        adj_comp = round(pop / pop_adj_comp, 3)
+        )
+```
+
+```{r plotPop, results="asis"}
+dtapopadjust%>%
+    plot_ly(x=~date,
+        y=~pop, name="Unadjusted", 
+        type = 'scatter', mode='lines',
+        line=list(color = c("#4575b4")),
+        marker=list(color = c("#4575b4"), size=1))%>%
+    add_lines(
+        y=~pop_adj_WAPO, name="Adjusted - WAPO*", 
+        line=list(color = c("#d73027")),
+        marker=list(color = c("#d73027"), size=1))%>%
+    add_lines(
+        y=~pop_adj_first, name="Adjusted - first**", 
+        line=list(color = c("#f46d43")),
+        marker=list(color = c("#f46d43"), size=1))%>%
+    add_lines(
+        y=~pop_adj_comp, name="Adjusted - complete***", 
+        line=list(color = c("#fdae61")),
+        marker=list(color = c("#fdae61"), size=1))%>%    
+    layout(
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(range=c(0, 300000))
+    )
+```
+__NOTE: adjustment methods__    
+1. Unadjusted population is estimated to be 255,441, as of July 2019.   
+2. __* Population, adjusted using Washington Post methods__: subtracting 85% of people who received one dose as of the same date. [See details  here](https://www.washingtonpost.com/health/interactive/2021/covid-rates-unvaccinated-people/?no_nav=true&tid=a_classic-iphone)    
+3. __** Population, adjusted based on first vaccination__: subtracting 75% of people who received _first does 14 days ago_. Real-world effectiveness for first vaccination is 80% for PFR/MOD 14 days after the first shot. Since Harford county residents received predominantly PFR/MOD vaccine, 75% is applied to be conservative.   
+4. __*** Population, adjusted based on full vaccination__: subtracting 85% of people who received _complete doses (2 PFR/MOD or 1 JSN) 14 days ago_. Real-world effectiveness for full vaccination is 90% for PFR/MOD 14 days after the second shot. Since Harford county residents received predominantly PFR/MOD vaccine, 85% is applied to be conservative.    
+
+* "Under real-world conditions, mRNA vaccine effectiveness of full immunization (>=14 days after second dose) was 90% against SARS-CoV-2 infections regardless of symptom status; vaccine effectiveness of partial immunization (>=14 days after first dose but before second dose) was 80%." (
+https://www.cdc.gov/mmwr/volumes/70/wr/mm7013e3.htm?s_cid=mm7013e3_w)      
+* Efficacy for JSN is 67%. (https://www.nejm.org/doi/full/10.1056/NEJMoa2034201)     
+
+```{r dta_pop_adjust_diaggregated_race}
+temp1<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    filter(race!="")%>%
+    group_by(race, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(first=obs)
+
+temp2<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER=="JSN" & dosenumber==1) | 
+               (MANUFACTURER!="JSN" & dosenumber==2))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    filter(race!="")%>%
+    group_by(race, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(complete=obs)
+
+temprace<-left_join(temp1, temp2, by=c("race", "vdate"))%>%
+    mutate(group="race")%>%
+    rename(grouplabel=race)%>%
+    select(group, grouplabel, vdate, first, complete)
+    
+```
+
+```{r dta_pop_adjust_diaggregated_zip}
+temp1<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    filter(zipcode22==TRUE)%>%
+    group_by(ZIP_CODE, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(first=obs)
+
+temp2<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER=="JSN" & dosenumber==1) | 
+               (MANUFACTURER!="JSN" & dosenumber==2))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    filter(zipcode22==TRUE)%>%
+    group_by(ZIP_CODE, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(complete=obs)
+
+tempzip<-left_join(temp1, temp2, by=c("ZIP_CODE", "vdate"))%>%
+    mutate(group="zip")%>%
+    rename(grouplabel=ZIP_CODE)%>%
+    select(group, grouplabel, vdate, first, complete)
+```
+
+```{r dta_pop_adjust_diaggregated_age}
+temp1<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    mutate(
+        agegroup="",
+        agegroup=ifelse(age>=65, "65 and older", 
+                        ifelse(age>=40 & age<65, "40-64",
+                        ifelse(age>=20 & age<40, "20-39",
+                        ifelse(age>=12 & age<20, "12-19",agegroup))))
+    )%>%
+    filter(agegroup!="")%>%
+    
+    group_by(agegroup, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(first=obs)
+
+temp2<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER=="JSN" & dosenumber==1) | 
+               (MANUFACTURER!="JSN" & dosenumber==2))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    mutate(
+        agegroup="",
+        agegroup=ifelse(age>=65, "65 and older", 
+                        ifelse(age>=40 & age<=64, "40-64",
+                        ifelse(age>=20 & age<=39, "20-39",
+                        ifelse(age>=12 & age<=19, "12-19",agegroup))))
+    )%>%
+    filter(agegroup!="")%>%
+    
+    group_by(agegroup, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(complete=obs)
+
+tempage<-left_join(temp1, temp2, by=c("agegroup", "vdate"))%>%
+    mutate(group="age")%>%
+    rename(grouplabel=agegroup)%>%
+    select(group, grouplabel, vdate, first, complete)
+```
+
+```{r dta_pop_adjust_diaggregated}
+dtapopadjust_bygroup<-bind_rows(temprace, tempage, tempzip)%>%
+    rename(date=vdate)%>%
+    mutate(
+        complete=ifelse(is.na(complete)==TRUE, 0, complete)
+    )%>%
+    
+    arrange(group, grouplabel, date)%>%
+    group_by(group, grouplabel)%>%
+    mutate(
+        cum_first = cumsum(first), 
+        cum_complete = cumsum(complete)
+    )%>%
+    ungroup()%>%
+    
+    mutate(
+        #denominator used in the vaccein data update
+        pop=NA, 
+        pop = replace(pop, grouplabel=="NH White", 	191831	),
+        pop = replace(pop, grouplabel=="NH Black", 	36457	),
+        pop = replace(pop, grouplabel=="NH Asian", 	7711	),
+        pop = replace(pop, grouplabel=="Hispanic", 12215	),
+
+        pop = replace(pop, grouplabel=="21001"	 , 	24752	),
+        pop = replace(pop, grouplabel=="21005"	 , 	2872	),
+        pop = replace(pop, grouplabel=="21009"	 , 	29905	),
+        pop = replace(pop, grouplabel=="21013"	 , 	4768	),
+        pop = replace(pop, grouplabel=="21014"	 , 	36538	),
+        pop = replace(pop, grouplabel=="21015"	 , 	29199	),
+        pop = replace(pop, grouplabel=="21017"	 , 	6983	),
+        pop = replace(pop, grouplabel=="21028"	 , 	2783	),
+        pop = replace(pop, grouplabel=="21034"	 , 	3483	),
+        pop = replace(pop, grouplabel=="21040"	 , 	24166	),
+        pop = replace(pop, grouplabel=="21047"	 , 	12266	),
+        pop = replace(pop, grouplabel=="21050"	 , 	18123	),
+        pop = replace(pop, grouplabel=="21078"	 , 	18366	),
+        pop = replace(pop, grouplabel=="21082"	 , 	656	),
+        pop = replace(pop, grouplabel=="21084"	 , 	7603	),
+        pop = replace(pop, grouplabel=="21085"	 , 	16055	),
+        pop = replace(pop, grouplabel=="21087"	 , 	5394	),
+        pop = replace(pop, grouplabel=="21111"	 , 	5387	),
+        pop = replace(pop, grouplabel=="21132"	 , 	3232	),
+        pop = replace(pop, grouplabel=="21154"	 , 	5804	),
+        pop = replace(pop, grouplabel=="21161"	 , 	5601	),
+        pop = replace(pop, grouplabel=="21160"	 , 	2933	),
+	    #for the five border areas - revise it
+        pop = replace(pop, grouplabel=="21013"	 , 	1487),
+        pop = replace(pop, grouplabel=="21082"	 , 	49),
+        pop = replace(pop, grouplabel=="21087"	 , 	813),
+        pop = replace(pop, grouplabel=="21111"	 , 	936),
+        pop = replace(pop, grouplabel=="21161"	 , 	2761),        
+        
+        pop = replace(pop, grouplabel=="65 and older", 17157 + 25136	),
+        pop = replace(pop, grouplabel=="40-64", 	87000	),
+        pop = replace(pop, grouplabel=="20-39", 	63761	),
+        pop = replace(pop, grouplabel=="12-19", 	5782 + 6883 + 13412	)
+    )%>%
+    
+    arrange(group, grouplabel, date)%>%
+    group_by(group, grouplabel)%>%  
+    mutate(
+        pop_adj_WAPO=pop - (cum_first*0.85),
+        #https://www.washingtonpost.com/health/interactive/2021/covid-rates-unvaccinated-people/
+        pop_adj_first=pop - (lag(cum_first, n=2) * 0.75),
+        pop_adj_comp=pop - (lag(cum_complete, n=2) * 0.85)
+        #real life effectiveness 80% after 14 days of the first vaccination 
+        #real life effectiveness 90% after 14 days of complete vaccination 
+        #JNJ efficacy 66%
+        #https://www.cdc.gov/mmwr/volumes/70/wr/mm7013e3.htm?s_cid=mm7013e3_w
+    )%>%
+    ungroup()%>%
+    
+    #select(date, starts_with("pop"))%>%
+    mutate(
+        pop_adj_first=ifelse(is.na(pop_adj_first)==TRUE, pop, pop_adj_first),
+        pop_adj_comp =ifelse(is.na(pop_adj_comp)==TRUE, pop, pop_adj_comp),
+        
+        adj_WAPO = round(pop / pop_adj_WAPO, 3),
+        adj_first = round(pop / pop_adj_first, 3),
+        adj_comp = round(pop / pop_adj_comp, 3)
+        )
+```
+
+### 2. Trends of new cases - all ages 
+
+```{r morepackages}
+suppressWarnings(suppressMessages(library(jsonlite)))
+suppressWarnings(suppressMessages(library(httr)))
+```
+
+```{r APIdtabycountyCases}
+
+url<-("https://opendata.arcgis.com/datasets/0573e90adab5434f97b082590c503bc1_0.geojson")
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+    
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapi<-jsondta[[2]]
+
+countylist<-as.vector(colnames(dtaapi))[-c(1:2)]
+
+casesbycounty<-dtaapi%>%
+    mutate(date=as.Date(DATE))%>%
+    select(-OBJECTID, -DATE)%>%
+    gather(county, cases, countylist)%>%
+    mutate(
+        county=ifelse(county=="Anne_Arundel", "Anne Arundel", county), 
+        county=ifelse(county=="Baltimore_City", "Baltimore city", county), 
+        county=ifelse(county=="Prince_Georges", "Prince George's", county), 
+        county=ifelse(county=="Queen_Annes", "Queen Anne's", county), 
+        county=ifelse(county=="St_Marys", "St. Mary's", county)    
+        )    
+```
+
+```{r APIdtabycountyConfirmeddeaths}
+
+url<-("https://opendata.arcgis.com/datasets/3dbd3e633b344c7c9a0d166b1d6a2b03_0.geojson")
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+    
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapi<-jsondta[[2]]
+
+countylist<-as.vector(colnames(dtaapi))[-c(1:2)]
+
+str(dta)
+
+deathsbycounty<-dtaapi%>%
+    mutate(date=as.Date(DATE))%>%
+    select(-OBJECTID, -DATE)%>%
+    gather(county, deaths, countylist)%>%
+    mutate(
+        county=ifelse(county=="Anne_Arundel", "Anne Arundel", county), 
+        county=ifelse(county=="Baltimore_City", "Baltimore city", county), 
+        county=ifelse(county=="Prince_Georges", "Prince George's", county), 
+        county=ifelse(county=="Queen_Annes", "Queen Anne's", county), 
+        county=ifelse(county=="St_Marys", "St. Mary's", county)    
+        )    
+
+```
+
+```{r APIdtabycountyProbabledeaths}
+
+url<-("https://opendata.arcgis.com/datasets/14dfc21466d34c2ea250a4642f08e880_0.geojson")
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapi<-jsondta[[2]]
+
+#View(dta)
+
+countylist<-as.vector(colnames(dtaapi))[-c(1:2)]
+
+probabledeathsbycounty<-dtaapi%>%
+    mutate(date=as.Date(DATE))%>%
+    select(-OBJECTID, -DATE)%>%
+    gather(county, probabledeaths, countylist)%>%
+    mutate(
+        county=ifelse(county=="Anne_Arundel", "Anne Arundel", county), 
+        county=ifelse(county=="Baltimore_City", "Baltimore city", county), 
+        county=ifelse(county=="Prince_Georges", "Prince George's", county), 
+        county=ifelse(county=="Queen_Annes", "Queen Anne's", county), 
+        county=ifelse(county=="St_Marys", "St. Mary's", county)    
+        )     
+
+#View(probabledeathsbycounty)
+```
+
+```{r APIdtabycountyTesstpersons}
+url<-("https://opendata.arcgis.com/datasets/736d3e5a280840a7916ab309b6ac8908_0.geojson")
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+    
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapi<-jsondta[[2]]    
+
+datelist<-as.vector(colnames(dtaapi))[-c(1:2)]
+
+testpersonsbycounty<-dtaapi%>%
+    select(-OBJECTID)%>%
+    gather(date, personstested, datelist)%>%
+    rename(county=County)%>%
+    mutate(
+        date=substring(date, 3),
+        date=gsub("\\_", "/", date),
+        date=as.Date(date, format = "%m/%d/%Y")
+        )%>%    
+    mutate(
+        county=ifelse(county=="Anne_Arundel", "Anne Arundel", county), 
+        county=ifelse(county=="Baltimore_City", "Baltimore city", county), 
+        county=ifelse(county=="Baltimore_city", "Baltimore city", county), 
+        county=ifelse(county=="Baltimore City", "Baltimore city", county), 
+        county=ifelse(county=="Prince_Georges", "Prince George's", county), 
+        county=ifelse(county=="Queen_Annes", "Queen Anne's", county), 
+        county=ifelse(county=="St_Marys", "St. Mary's", county)    
+        )     
+
+    #View(testpersonsbycounty)
+```
+
+```{r APIdtabycountyTessts}
+url<-("https://opendata.arcgis.com/datasets/853593daf977435aaa909b334445542c_0.geojson")
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+    
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapi<-jsondta[[2]]    
+
+    #View(dta)
+
+datelist<-as.vector(colnames(dtaapi))[-c(1:2)]
+
+testsbycounty<-dtaapi%>%
+    select(-OBJECTID)%>%
+    gather(date, tests, datelist)%>%
+    rename(county=County)%>%
+    mutate(
+        date=substring(date, 3),
+        date=gsub("\\_", "/", date),
+        date=as.Date(date, format = "%m/%d/%Y")
+        )%>%
+    mutate(
+        county=ifelse(county=="Anne_Arundel", "Anne Arundel", county), 
+        county=ifelse(county=="Baltimore_City", "Baltimore city", county), 
+        county=ifelse(county=="Baltimore_city", "Baltimore city", county), 
+        county=ifelse(county=="Baltimore City", "Baltimore city", county), 
+        county=ifelse(county=="Prince_Georges", "Prince George's", county), 
+        county=ifelse(county=="Queen_Annes", "Queen Anne's", county), 
+        county=ifelse(county=="St_Marys", "St. Mary's", county)    
+        )    
+
+
+    str(testsbycounty)
+    
+    #View(testsbycounty)
+```
+
+```{r APIdtabycountyPositiveRate}
+url<-("https://opendata.arcgis.com/datasets/54d028e340f44e88945e26579eecd447_0.geojson")
+#metadata: https://www.arcgis.com/sharing/rest/content/items/54d028e340f44e88945e26579eecd447/info/metadata/metadata.xml?format=default&output=html
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+    
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapi<-jsondta[[2]]    
+
+    #View(dta)
+
+#two indicators. Keep only the rolling avearage positivity rate    
+dtaapi<-dtaapi%>%
+    select(-ends_with("Percent_Positive"))%>%
+    rename(date=ReportDate)%>%
+    mutate(
+        date=substring(date, 1, 10),
+        date=as.Date(date, format = "%Y/%m/%d")
+        )
+
+    #colnames(dta)
+    #str(dta)
+   
+countylist<-as.vector(colnames(dtaapi))[-c(1:2)]
+
+prbycounty<-dtaapi%>%
+    select(-OBJECTID)%>%
+    gather(county, positivityrate, countylist)%>%
+    mutate(
+        county=gsub( "_Rolling_Avg", "", county)
+        )%>%
+    mutate(
+        county=ifelse(county=="Anne_Arundel", "Anne Arundel", county), 
+        county=ifelse(county=="Baltimore_City", "Baltimore city", county), 
+        county=ifelse(county=="Baltimore_city", "Baltimore city", county), 
+        county=ifelse(county=="Baltimore City", "Baltimore city", county), 
+        county=ifelse(county=="Prince_Georges", "Prince George's", county), 
+        county=ifelse(county=="Queen_Annes", "Queen Anne's", county), 
+        county=ifelse(county=="St_Marys", "St. Mary's", county)    
+        )    
+
+    str(prbycounty)
+   
+```
+
+```{r dtabycounty}
+dtabycounty<-left_join(casesbycounty, deathsbycounty, 
+                     by = c("county", "date"))
+
+dtabycounty<-left_join(dtabycounty, probabledeathsbycounty, 
+                     by = c("county", "date"))
+
+dtabycounty<-left_join(dtabycounty, testsbycounty, 
+             by = c("county", "date"))
+
+dtabycounty<-left_join(dtabycounty, testpersonsbycounty, 
+             by = c("county", "date"))
+
+dtabycounty<-left_join(dtabycounty, prbycounty, 
+             by = c("county", "date"))
+
+dtabycounty<-dtabycounty%>%
+    group_by(county)%>%
+    mutate(
+        firstdatecounty=min(date, na.rm = TRUE),#first date by county 
+        latestdatecounty=max(date, na.rm = TRUE),#latest update date by county
+        latesttotalcases=max(cases, na.rm = TRUE)#latest cumulative number
+    )%>%ungroup()%>%
+    arrange(county, date)
+
+```
+
+```{r dta_Harford}
+
+dtaharford<-dtabycounty%>%
+    filter(county=="Harford")%>%
+    mutate(population=255441)%>% 
+    mutate(group=county)%>%
+    arrange(group, date)%>%
+    mutate(
+        
+        newcases=cases-lag(cases),
+        newcases=ifelse(group!=lag(group), NA, newcases), 
+        newcases=ifelse(newcases<0,    0, newcases),
+    
+        newcasessmooth =round(c(NA,NA,NA,NA,NA,NA,rollmean(newcases, 7)), 1), 
+        newcasessmooth=ifelse(group!=lag(group), NA, newcasessmooth),
+
+        day = row_number(),
+        maxday = max(day),
+        latestmonth= maxday-day<=30, 
+        newcasessmoothlatestmonth = newcasessmooth,
+        newcasessmoothlatestmonth = ifelse(latestmonth!=1, NA,
+                                             newcasessmoothlatestmonth)
+        
+    )
+
+```
+
+```{r plotTrend_cases, results="asis"}
+dtaharford%>% 
+    plot_ly(x=~date,
+        y=~newcasessmooth, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#828282"), size = 1),
+        line=list(color = c( "#828282"))
+        )%>%
+    add_trace(
+        y=~newcasessmoothlatestmonth, type='scatter', mode = 'lines', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black"))
+        )%>%  
+    layout(
+        showlegend = FALSE,
+        title ="Trends of new daily cases, Harford County", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "New daily cases (7-day rolling average)", 
+                   showgrid = FALSE)
+        )
+```
+
+```{r dtamore}
+dim(dtaharford)
+dim(dtapopadjust)
+colnames(dtaharford)
+colnames(dtapopadjust)
+
+dtafig<-left_join(dtaharford, dtapopadjust, by="date")%>%
+    mutate(
+        pop_adj_WAPO=ifelse(is.na(pop_adj_WAPO)==TRUE, population, pop_adj_WAPO), 
+        pop_adj_comp=ifelse(is.na(pop_adj_comp)==TRUE, population, pop_adj_comp),
+        pop_adj_first=ifelse(is.na(pop_adj_first)==TRUE, population, pop_adj_first),
+        
+        newcasessmoothpp=round(100000*newcasessmooth/population, 3),  
+        newcasessmoothpp_adjWAPO=round(100000*newcasessmooth/pop_adj_WAPO, 3),  
+        newcasessmoothpp_adjcomp=round(100000*newcasessmooth/pop_adj_comp, 3),  
+        newcasessmoothpp_adjfirst=round(100000*newcasessmooth/pop_adj_first, 3)  
+    )%>%
+    filter(date<=max(dtapopadjust$date))#drop the last row because of the one day lag in data sources 
+
+```
+
+```{r plotTrend_pop}
+dtafig%>%
+    plot_ly(x=~date,
+        y=~population, name="Unadjusted", type = 'scatter', mode='lines',
+        line=list(color = c("#4575b4")),
+        marker=list(color = c("#4575b4"), size=1))%>%
+    add_lines(
+        y=~pop_adj_WAPO, name="Adjusted - WAPO*", 
+        line=list(color = c("#d73027")),
+        marker=list(color = c("#d73027"), size=1))%>%
+    add_lines(
+        y=~pop_adj_first, name="Adjusted - first**", 
+        line=list(color = c("#f46d43")),
+        marker=list(color = c("#f46d43"), size=1))%>%    
+    add_lines(
+        y=~pop_adj_comp, name="Adjusted - complete***", 
+        line=list(color = c("#fdae61")),
+        marker=list(color = c("#fdae61"), size=1))%>%
+    add_lines(
+        y=~population, name="", 
+        line=list(color = c("#4575b4")),
+        marker=list(color = c("#4575b4"), size=1))%>%
+    layout(
+        title ="Trends of population at risk, Harford County", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "Population", range=c(0, 300000)),
+        legend=list(orientation="v", xanchor = "left", yanchor = "center", 
+                    x = 0.1, y = 0.5) 
+    )
+```
+
+### 3. Trends of new cases per 100,000 population - all ages
+```{r plotTrend_rates, results="asis"}
+dtafig%>% 
+    plot_ly(x=~date,
+        y=~newcasessmoothpp, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#4575b4"), size = 1),
+        line=list(color = c( "#4575b4")),
+        name="unadjusted"
+        )%>%
+    add_lines(
+        y=~newcasessmoothpp_adjWAPO, type='scatter', 
+        marker=list(color = c( "#d73027"), size = 1),
+        line=list(color = c( "#d73027")),
+        name="Adjusted - WAPO*" 
+        )%>% 
+    add_lines(
+        y=~newcasessmoothpp_adjfirst, type='scatter', 
+        marker=list(color = c( "#f46d43"), size = 1),
+        line=list(color = c( "#f46d43")),
+        name="Adjusted - first**"
+        )%>%  
+    add_lines(
+        y=~newcasessmoothpp_adjcomp, type='scatter', 
+        marker=list(color = c( "#fdae61"), size = 1),
+        line=list(color = c( "#fdae61")),
+        name="Adjusted - complete***"
+        )%>%  
+    add_lines(
+        y=~newcasessmoothpp, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#4575b4"), size = 1),
+        line=list(color = c( "#4575b4")),
+        name=" "
+        )%>%
+    layout(
+        title ="Trends of new daily cases, Harford County", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "New daily cases per population 100,000", 
+                   showgrid = FALSE),
+        legend=list(orientation="v", xanchor = "left", yanchor = "center", 
+                    x = 0.1, y = 0.9) 
+        )
+```
+
+### 4. Trends of relative difference - i.e., adjustment factor  
+```{r plotTrend_ratio, results="asis"}
+dtafig<-dtafig%>%
+    mutate(
+        ratio_WAPO = round(newcasessmoothpp_adjWAPO / newcasessmoothpp, 3), 
+        ratio_comp = round(newcasessmoothpp_adjcomp / newcasessmoothpp, 3), 
+        ratio_first = round(newcasessmoothpp_adjfirst / newcasessmoothpp, 3), 
+        
+        adj_WAPO = round(population / pop_adj_WAPO, 3),
+        adj_comp = round(population / pop_adj_comp, 3),
+        adj_first = round(population / pop_adj_first, 3), 
+        
+        latestratio_comp=round(ratio_comp, 2), 
+        latestratio_comp=ifelse(date!=max(date), NA, latestratio_comp)
+    )
+
+dtafig%>% 
+    plot_ly(x=~date,
+        y=~ratio_WAPO, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#d73027"), size = 1),
+        line=list(color = c( "#d73027")),
+        name="Adjusted - WAPO*" 
+        )%>% 
+    add_lines(
+        y=~ratio_first, type='scatter', 
+        marker=list(color = c( "#f46d43"), size = 1),
+        line=list(color = c( "#f46d43")),
+        name="Adjusted - first**"
+        )%>%      
+    add_lines(
+        y=~ratio_comp, type='scatter', 
+        marker=list(color = c( "#fdae61"), size = 1),
+        line=list(color = c( "#fdae61")),
+        name="Adjusted - complete***"
+        )%>%  
+    add_lines(
+        y=~1, type='scatter', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black")),
+        name="(reference)"
+        )%>% 
+    add_trace(
+        y = ~latestratio_comp, type = 'scatter', mode = 'markers', 
+        marker = list(size = 5,color ="#fdae61"),
+        text = ~latestratio_comp, 
+        textfont=list(size=10, color="#fdae61"), 
+        textposition = "top",
+        showlegend=FALSE
+        )%>%      
+    layout(
+        title ="Trends of relative difference: ratio of adjusted/unadjusted, Harford County", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "ratio", 
+                   showgrid = FALSE),
+        legend=list(orientation="v", xanchor = "left", yanchor = "center", 
+                    x = 0.1, y = 0.9) 
+        )
+```
+
+### 5. Adjustment factor by group  
+
+```{r}
+dtafig%>% 
+    plot_ly(x=~date,
+        y=~adj_WAPO, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#d73027"), size = 1),
+        line=list(color = c( "#d73027")),
+        name="Adjusted - WAPO*" 
+        )%>% 
+    add_lines(
+        y=~adj_first, type='scatter', 
+        marker=list(color = c( "#f46d43"), size = 1),
+        line=list(color = c( "#f46d43")),
+        name="Adjusted - first**"
+        )%>%      
+    add_lines(
+        y=~adj_comp, type='scatter', 
+        marker=list(color = c( "#fdae61"), size = 1),
+        line=list(color = c( "#fdae61")),
+        name="Adjusted - complete***"
+        )%>%  
+    add_lines(
+        y=~1, type='scatter', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black")),
+        name="(reference)"
+        )%>%      
+    layout(
+        title ="Trends of relative difference: ratio of adjusted/unadjusted, Harford County", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "ratio", 
+                   showgrid = FALSE),
+        legend=list(orientation="v", xanchor = "left", yanchor = "center", 
+                    x = 0.1, y = 0.9) 
+        )
+
+```
+
+```{r plot_panel}
+panel <- . %>% 
+    plot_ly(x=~date,
+        y=~adj_WAPO, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#d73027"), size = 1),
+        line=list(color = c( "#d73027")),
+        name="Adjusted - WAPO*" 
+        )%>% 
+    add_lines(
+        y=~adj_first, type='scatter', 
+        marker=list(color = c( "#f46d43"), size = 1),
+        line=list(color = c( "#f46d43")),
+        name="Adjusted - first**"
+        )%>%      
+    add_lines(
+        y=~adj_comp, type='scatter', 
+        marker=list(color = c( "#fdae61"), size = 1),
+        line=list(color = c( "#fdae61")),
+        name="Adjusted - complete***"
+        )%>%  
+    add_lines(
+        y=~1, type='scatter', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black")),
+        name="(reference)"
+        )%>%      
+    add_annotations(
+        text = ~unique(grouplabel),
+        x = 0.5, y = 0.9, xref = "paper", yref = "paper",    
+        xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+        font = list(size = 12)
+        ) %>%    
+    layout(
+        title ="Trends of relative difference: ratio of adjusted/unadjusted, Harford County", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "ratio", 
+                   showgrid = FALSE),
+        showlegend = FALSE
+        )
+
+```
+
+```{r}
+dtapopadjust_bygroup%>%
+    filter(group=="race")%>%
+    group_by(grouplabel) %>%
+    do(p = panel(.)) %>%
+    subplot(nrows = 1, shareX = TRUE, shareY = TRUE)
+```
+
+The higher vaccination coverage, the higher relative adjustment factor for unvaccinated people. 
+
+For example, for unvaccinated Asians the relative inflation in the new cases/pop is higher comapred to unvaccinated Black (hypothetically, 3 vs.  1.5, respectively). But, typically, new cases among Asians is lower than that among Black (hypothetically 2/100,000 vs. 10/100,000, respectively). So, the rate of new cases can be still lower among unvaccinated Asians than unvaccinated Black (3 x 2/100,000 = __6/100,000__ vs. 1.5 x 10/100,000 = __15/100,000__).    
+
+But, how do we interpret these factors across groups? Or, is it more to stress this "inflation" with the group-specific adjustment factor for a low-vaccination-group? That inflation factor, however, will be lower than the overall inflation factor...   
+
+```{r, results="asis"}
+dtapopadjust_bygroup%>%  
+    filter(group=="race")%>%
+    plot_ly(x=~date,
+        y=~adj_comp, type='scatter', mode = 'lines' , 
+        color=~grouplabel
+        )%>%  
+    add_lines(
+        y=~1, type='scatter', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black")),
+        name="(reference)"
+        )%>%          
+    layout(
+        title ="Trends of adj_comp***, by race", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "ratio", 
+                   showgrid = FALSE),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 0.05, y = 0.95,
+                    font=list(size=12))   
+        
+        )
+
+dtapopadjust_bygroup%>%  
+    filter(group=="zip")%>%
+    plot_ly(x=~date,
+        y=~adj_comp, type='scatter', mode = 'lines' , 
+        color=~grouplabel
+        )%>% 
+    add_lines(
+        y=~1, type='scatter', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black")),
+        name="(reference)"
+        )%>%          
+    layout(
+        title ="Trends of adj_comp***, by zip code", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "ratio", 
+                   showgrid = FALSE),
+        showlegend=FALSE
+        
+        )
+
+dtapopadjust_bygroup%>%  
+    filter(group=="age")%>%
+    plot_ly(x=~date,
+        y=~adj_comp, type='scatter', mode = 'lines' , 
+        color=~grouplabel
+        )%>%  
+    add_lines(
+        y=~1, type='scatter', 
+        marker=list(color = c( "black"), size = 1),
+        line=list(color = c( "black")),
+        name="(reference)"
+        )%>%          
+    layout(
+        title ="Trends of adj_comp***, by age", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "ratio",  
+                   showgrid = FALSE),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 0.05, y = 0.95,
+                    font=list(size=12))   
+        
+        )
+```
+
+### 6. Trends of new cases per 100,000 population - by background characteristics: unadjusted vs. adjusted
+
+__Adjusted(***) based on full vaccination__: population at risk = population minus 85% of people who received _complete doses (2 PFR/MOD or 1 JSN) 14 days ago_. Real-world effectiveness for full vaccination is 90% for PFR/MOD 14 days after the second shot. Since Harford county residents received predominantly PFR/MOD vaccine, 85% is applied to be conservative.
+
+COVID-19 case by background characteristics data are __as of June 6, 2021__.  
+
+```{r dtaredcap_import}
+#COVID-19 case data by age from Prepmod 
+dtaredcap<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_HCHD_redcap/DailyCaseSummary-Harford_DATA_6.6.21.xlsx")
+
+dim(dtaredcap)
+colnames(dtaredcap)
+```
+
+#### 6.1. By age group
+```{r dta_pop_adjust_diaggregated_age10}
+temp1<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    mutate(
+        begin=round(age/10, 0)*10,
+        begin=ifelse(begin>=80, 80, begin),  
+        end = begin+9, 
+        agegroup=paste0(as.character(begin),"-", as.character(end)), 
+        agegroup=ifelse(agegroup=="80-89", "80+", agegroup)
+    )%>%
+    filter(agegroup!="")%>%
+    
+    group_by(agegroup, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(first=obs)
+
+temp2<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER=="JSN" & dosenumber==1) | 
+               (MANUFACTURER!="JSN" & dosenumber==2))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    mutate(
+        begin=round(age/10, 0)*10,
+        begin=ifelse(begin>=80, 80, begin),  
+        end = begin+9, 
+        agegroup=paste0(as.character(begin),"-", as.character(end)), 
+        agegroup=ifelse(agegroup=="80-89", "80+", agegroup)
+    )%>%
+    filter(agegroup!="")%>%
+    
+    group_by(agegroup, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(complete=obs)
+
+dtapopadjust_age10<-left_join(temp1, temp2, by=c("agegroup", "vdate"))%>%
+    select(agegroup, vdate, first, complete)%>%
+    rename(date=vdate)%>%
+    mutate(
+        complete=ifelse(is.na(complete)==TRUE, 0, complete)
+    )%>%
+    
+    arrange(agegroup, date)%>%
+    group_by(agegroup)%>%
+    mutate(
+        cum_first = cumsum(first), 
+        cum_complete = cumsum(complete)
+    )%>%
+    ungroup()%>%
+    
+    mutate(
+        #denominator used in the vaccein data update
+        pop=NA, 
+        pop = replace(pop, agegroup=="0-9",	29749),
+        pop = replace(pop, agegroup=="10-19",	32638),
+        pop = replace(pop, agegroup=="20-29",	30562),
+        pop = replace(pop, agegroup=="30-39",	33199),
+        pop = replace(pop, agegroup=="40-49",	31689),
+        pop = replace(pop, agegroup=="50-59",	37936),
+        pop = replace(pop, agegroup=="60-69",	31088),
+        pop = replace(pop, agegroup=="70-79",	19245),
+        pop = replace(pop, agegroup=="80+",	9335)
+    )%>%
+    
+    arrange(agegroup, date)%>%
+    group_by(agegroup)%>%  
+    mutate(
+        pop_adj_WAPO= pop - (cum_first*0.85),
+        pop_adj_first=pop - (lag(cum_first, n=2) * 0.75),
+        pop_adj_comp= pop - (lag(cum_complete, n=2) * 0.85)
+    )%>%
+    ungroup()%>%
+    
+    mutate(
+        pop_adj_first=ifelse(is.na(pop_adj_first)==TRUE, pop, pop_adj_first),
+        pop_adj_comp =ifelse(is.na(pop_adj_comp)==TRUE, pop, pop_adj_comp),
+        
+        adj_WAPO = round(pop / pop_adj_WAPO, 3),
+        adj_first = round(pop / pop_adj_first, 3),
+        adj_comp = round(pop / pop_adj_comp, 3)
+        )%>%
+    select(agegroup, date, starts_with("adj_"))
+```
+
+```{r dtaredcap_age10}
+dtaredcap_age10<-dtaredcap%>%
+    filter(county=="Harford")%>% 
+    rename(cdate=date_of_collection...4)%>%
+    select(-age_group)%>%
+    mutate(
+        age=round((as.Date(date)-as.Date(dob)) /365.4, 0) , 
+        begin=round(age/10, 0)*10,
+        begin=ifelse(begin>=80, 80, begin),  
+        end = begin+9, 
+        agegroup=paste0(as.character(begin),"-", as.character(end)), 
+        agegroup=ifelse(agegroup=="80-89", "80+", agegroup),  
+        cases=1)%>%    
+    
+    group_by(agegroup, cdate)%>%
+    summarize_at(vars(cases),
+                 funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    
+    mutate(
+        #denominator used in the vaccein data update
+        pop=NA, 
+        pop = replace(pop, agegroup=="0-9",	29749),
+        pop = replace(pop, agegroup=="10-19",	32638),
+        pop = replace(pop, agegroup=="20-29",	30562),
+        pop = replace(pop, agegroup=="30-39",	33199),
+        pop = replace(pop, agegroup=="40-49",	31689),
+        pop = replace(pop, agegroup=="50-59",	37936),
+        pop = replace(pop, agegroup=="60-69",	31088),
+        pop = replace(pop, agegroup=="70-79",	19245),
+        pop = replace(pop, agegroup=="80+",	9335)
+    )%>%
+    
+    arrange(agegroup, cdate)%>% 
+    mutate(
+
+        newcases=cases-lag(cases),
+        newcases=ifelse(agegroup!=lag(agegroup), NA, newcases), 
+        newcases=ifelse(newcases<0,    0, newcases),
+    
+        newcasessmooth =round(c(NA,NA,NA,NA,NA,NA,rollmean(newcases, 7)), 1), 
+        newcasessmooth=ifelse(agegroup!=lag(agegroup), NA, newcasessmooth), 
+        
+        newcasessmoothpp=round(100000*newcasessmooth/pop, 3)  
+        
+    )%>%
+    rename(date=cdate)
+```
+
+```{r dtafig_byage}
+dtafig<-left_join(dtaredcap_age10, dtapopadjust_age10, by=c("agegroup", "date"))%>%
+    mutate(
+        
+        adj_WAPO=ifelse(is.na(adj_first)==TRUE, 1, adj_first),
+        adj_first=ifelse(is.na(adj_first)==TRUE, 1, adj_first),
+        adj_comp =ifelse(is.na(adj_comp)==TRUE, 1, adj_comp),
+            
+        newcasessmoothpp_adjWAPO=round(newcasessmoothpp*adj_WAPO, 3),  
+        newcasessmoothpp_adjcomp=round(newcasessmoothpp*adj_comp, 3),  
+        newcasessmoothpp_adjfirst=round(newcasessmoothpp*adj_first, 3)  
+    )%>%
+    filter(date<=max(dtapopadjust_age10$date))#drop the last row because of the one day lag in data sources 
+```
+
+```{r panel_bygroup}
+panel <- . %>% 
+    plot_ly(x=~date,
+        y=~newcasessmoothpp, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#4575b4"), size = 1),
+        line=list(color = c( "#4575b4")),
+        name="unadjusted"
+        )%>%
+    add_lines(
+        y=~newcasessmoothpp_adjcomp, type='scatter', 
+        marker=list(color = c( "#fdae61"), size = 1),
+        line=list(color = c( "#fdae61")),
+        name="Adjusted - complete***"
+        )%>%  
+    add_lines(
+        y=~newcasessmoothpp, type='scatter', mode = 'lines', 
+        marker=list(color = c( "#4575b4"), size = 1),
+        line=list(color = c( "#4575b4")),
+        name=" "
+        )%>%
+    add_annotations(
+        text = ~unique(group),
+        x = 0.5, y = 0.9, xref = "paper", yref = "paper",    
+        xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+        font = list(size = 12)
+        ) %>%    
+    layout(
+        title ="Unadjusted (blue) vs. adjusted (complete***)", 
+        xaxis=list(title = "", font=list(size=10),tickfont = list(size=8),
+                   showgrid = FALSE),
+        yaxis=list(title = "New daily cases per population 100,000", 
+                   showgrid = FALSE),
+        showlegend=FALSE
+        )
+
+```
+
+```{r plotTrend_rates_byage, results="asis", out.width="800px", out.height="1000px"}
+dtafig%>%
+    filter(agegroup!="80+")%>%
+    filter(agegroup!="0-9")%>%
+    filter(agegroup!="10-19")%>%
+    filter(date<=as.Date("2021-06-05") & date>=as.Date("2021-01-01"))%>%
+    rename(group=agegroup)%>%
+    group_by(group) %>%
+    do(p = panel(.)) %>%
+    subplot(nrows = 3, shareX = TRUE, shareY = TRUE)
+```
+(Note: Age-disaggregated COVID-19 case data came from Redcap - as of 6/6/2020)
+
+#### 6.2. By race
+```{r dta_pop_adjust_race}
+temp1<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    filter(race!="")%>%
+    group_by(race, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(first=obs)
+
+temp2<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER=="JSN" & dosenumber==1) | 
+               (MANUFACTURER!="JSN" & dosenumber==2))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(obs=1)%>%
+
+    filter(race!="")%>%
+    group_by(race, vdate)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(obs=ifelse(is.na(obs)==TRUE, 0, obs))%>%
+    rename(complete=obs)
+
+dtapopadjust_race<-left_join(temp1, temp2, by=c("race", "vdate"))%>%
+    select(race, vdate, first, complete)%>%
+    rename(date=vdate)%>%
+    mutate(
+        complete=ifelse(is.na(complete)==TRUE, 0, complete)
+    )%>%
+    
+    arrange(race, date)%>%
+    group_by(race)%>%
+    mutate(
+        cum_first = cumsum(first), 
+        cum_complete = cumsum(complete)
+    )%>%
+    ungroup()%>%
+    
+    mutate(
+        #denominator used in the vaccein data update
+        pop=NA, 
+        pop = replace(pop, race=="NH White", 	191831	),
+        pop = replace(pop, race=="NH Black", 	36457	),
+        pop = replace(pop, race=="NH Asian", 	7711	),
+        pop = replace(pop, race=="Hispanic", 12215	)
+    )%>%
+    
+    arrange(race, date)%>%
+    group_by(race)%>%  
+    mutate(
+        pop_adj_WAPO= pop - (cum_first*0.85),
+        pop_adj_first=pop - (lag(cum_first, n=2) * 0.75),
+        pop_adj_comp= pop - (lag(cum_complete, n=2) * 0.85)
+    )%>%
+    ungroup()%>%
+    
+    mutate(
+        pop_adj_first=ifelse(is.na(pop_adj_first)==TRUE, pop, pop_adj_first),
+        pop_adj_comp =ifelse(is.na(pop_adj_comp)==TRUE, pop, pop_adj_comp),
+        
+        adj_WAPO = round(pop / pop_adj_WAPO, 3),
+        adj_first = round(pop / pop_adj_first, 3),
+        adj_comp = round(pop / pop_adj_comp, 3)
+        )%>%
+    select(race, date, starts_with("adj_"))
+```
+
+```{r dtaredcap_race_missing}
+table(dtaredcap$race) 
+table(dtaredcap$ethnicity)
+table(dtaredcap$race, dtaredcap$ethnicity)
+```
+
+```{r dtaredcap_race}    
+dtaredcap_race<-dtaredcap%>%
+    filter(county=="Harford")%>% 
+    rename(cdate=date_of_collection...4)%>%
+    mutate(
+        racegroup="", 
+        racegroup=ifelse(ethnicity=="NOT HISPANIC" & race=="WHITE", "NH White", racegroup), 
+        racegroup=ifelse(ethnicity=="NOT HISPANIC" & 
+                        (race=="BLACK" | race=="Black or African American" | race=="BLACK OR AFRICAN AMERICAN"), 
+                        "NH Black", racegroup),  
+        racegroup=ifelse(ethnicity=="NOT HISPANIC" & race=="ASIAN", "NH Asian", racegroup),
+        racegroup=ifelse(ethnicity=="HISPANIC", "Hispanic", racegroup), 
+        cases=1)%>%    
+    
+    group_by(racegroup, cdate)%>%
+    summarize_at(vars(cases),
+                 funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    rename(race=racegroup)%>%
+    
+    mutate(
+        #denominator used in the vaccein data update
+        pop=NA, 
+        pop = replace(pop, race=="NH White", 	191831	),
+        pop = replace(pop, race=="NH Black", 	36457	),
+        pop = replace(pop, race=="NH Asian", 	7711	),
+        pop = replace(pop, race=="Hispanic", 12215	)
+    )%>%
+    
+    arrange(race, cdate)%>% 
+    mutate(
+
+        newcases=cases-lag(cases),
+        newcases=ifelse(race!=lag(race), NA, newcases), 
+        newcases=ifelse(newcases<0,    0, newcases),
+    
+        newcasessmooth =round(c(NA,NA,NA,NA,NA,NA,rollmean(newcases, 7)), 1), 
+        newcasessmooth=ifelse(race!=lag(race), NA, newcasessmooth), 
+        
+        newcasessmoothpp=round(100000*newcasessmooth/pop, 3)  
+        
+    )%>%
+    rename(date=cdate)
+```
+
+```{r dtafig_byrace}
+dtafig<-left_join(dtaredcap_race, dtapopadjust_race, by=c("race", "date"))%>%
+    mutate(
+        
+        adj_WAPO=ifelse(is.na(adj_first)==TRUE, 1, adj_first),
+        adj_first=ifelse(is.na(adj_first)==TRUE, 1, adj_first),
+        adj_comp =ifelse(is.na(adj_comp)==TRUE, 1, adj_comp),
+            
+        newcasessmoothpp_adjWAPO=round(newcasessmoothpp*adj_WAPO, 5),  
+        newcasessmoothpp_adjcomp=round(newcasessmoothpp*adj_comp, 5),  
+        newcasessmoothpp_adjfirst=round(newcasessmoothpp*adj_first, 5)  
+    )%>%
+    filter(date<=max(dtapopadjust_race$date))#drop the last row because of the one day lag in data sources 
+```
+
+```{r plotTrend_rates_byrace, results="asis", out.width="800px", out.height="500px"}
+dtafig%>%
+    filter(race!="")%>%
+    filter(date<=as.Date("2021-06-05") & date>=as.Date("2021-01-01"))%>%
+    rename(group=race)%>%
+    group_by(group) %>%
+    do(p = panel(.)) %>%
+    subplot(nrows = 2, shareX = TRUE, shareY = TRUE)
+```
+(Note: Race/ethnicity-disaggregated COVID-19 case data came from Redcap - as of 6/6/2020. But, about 10% of cases do not have race/ethnicity information in Redcap)
+
+---
+
+###Annex: WAPO Methodology
+
+"The Post adjusted covid-19 rates for cases, deaths and hospitalization over time by combining Centers for Disease Control and Prevention data on cases, hospitalization and vaccinations. The Post used a rolling seven-day average of daily cases, deaths and hospitalization. __For vaccination, The Post used the number of people who had received at least one shot as of each date.__
+
+For events like covid-19 infection, rates are usually calculated by dividing the number of cases by the number of people in the population. For example, if there are 12 cases among a population of 100 people, the rate would be 12 people per 100. The Post reduced the denominator to exclude most vaccinated people. So if 20 people got vaccinated, that would mean there were 12 cases out of the remaining 80 unvaccinated people, for an adjusted rate of 15 cases per 100 people.
+
+Vaccination is not perfect in preventing infections, however, so The Post did not subtract the entire population of vaccinated people. Data shows vaccines are about 90 percent effective in preventing cases among people who have received the shot. Cases among vaccinated people are called breakthrough cases. To be conservative, The Post estimated that up to 15 percent of the vaccinated population could still be infected.
+
+So, in the example above, instead of removing all 20 vaccinated people, The Post removed 17. That would leave 12 cases among 83 people, for an adjusted rate of 14.5 cases per 100 people.
+
+The Post calculated the adjusted rates of cases, deaths and hospitalization for the nation and each state since the start of vaccination in December. Covid-19 case and death rates released by states are sometimes subject to time lags. State also sometimes review older cases and issue updated figures that reflect a backlog of old cases rather than a surge on that day."
+
+Source: (https://www.washingtonpost.com/health/interactive/2021/covid-rates-unvaccinated-people/)
+
+---
+
+<p style="color:lightgray">
+See [GitHub](https://github.com/yoonjoung/COVID19_MD) for data, code, and more information. 
+For typos, errors, and questions, contact me at [www.isquared.global](https://www.iSquared.global/YJ). 
+
+_Making Data Delicious, One Byte at a Time_</p>

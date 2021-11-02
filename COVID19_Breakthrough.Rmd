@@ -1,0 +1,3203 @@
+---
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true
+---
+#### Data prep
+```{r intro, echo=FALSE, results="hide"}
+##### MUST CHANGE MANUALLY the following lines: 
+##### 1. OPEN PYTHON TO DELETE OLD COVID link reports. Them download new reports. NO MORE updating colid-link report numbers. Yay!!!!! 
+##### 2. date for immunet data
+##### 3. date for hospitalization data
+date_dtahosp<-"10.29.21"
+date_dtaimmunet<-"10292021"
+
+knitr::opts_chunk$set(echo=FALSE, 
+                      message=FALSE, 
+                      comment = "", 
+                      warning=FALSE, 
+                      results="hide") 
+
+##### SET your working directory - only once, and you're set #####
+#knitr::opts_knit$set(root.dir = "~/Dropbox/0 iSquared/iSquared_Harfod/1.COVID19/")
+knitr::opts_knit$set(root.dir = "~/Dropbox/0 iSquared/iSquared_Harfod/1.COVID19/")
+
+Sys.setenv(TZ='EST')
+time<-Sys.time()
+date<-as.Date(Sys.time(	), format='%d%b%Y')
+
+suppressWarnings(suppressMessages(library(dplyr)))
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(data.table)))
+suppressWarnings(suppressMessages(library(haven)))
+suppressWarnings(suppressMessages(library(readxl)))
+
+suppressWarnings(suppressMessages(library(Matrix))) 
+suppressWarnings(suppressMessages(library(stringr)))
+suppressWarnings(suppressMessages(library(lubridate)))
+suppressWarnings(suppressMessages(library(zoo)))
+
+suppressWarnings(suppressMessages(library(ggplot2)))
+suppressWarnings(suppressMessages(library(plotly)))
+suppressWarnings(suppressMessages(library(knitr)))  
+suppressWarnings(suppressMessages(library(kableExtra)))  
+
+suppressWarnings(suppressMessages(library(RColorBrewer))) 
+
+#* COVID Link breakthrough cases data by MDH, as of `r date`       
+#* COVID Link VOC/VOI data by MDH, as of `r date`.        
+```
+
+## COVID-19 breakthrough cases among Harford County residents in Maryland 
+
+(Page updated at `r time`)   
+Data from:     
+* COVID Link breakthrough cases data by MDH, as of __10.29.21__       
+* COVID Link VOC/VOI data by MDH, as of __10.29.21__    
+* The number of total new COVID-19 cases by MDH, as of `r date`.        
+* Vaccination data from Immunet, as of __`r date_dtaimmunet`__.     
+* COVID19 hospitalization data by MDH, as of __`r date_dtahosp`__.     
+See Annex for detailed note about the data.   
+
+```{r check_covidlink_reports, eval=FALSE}
+#check the latest report numbers
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/VOC/")
+dir()
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report_Death/")
+dir()
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report_Hosp/")
+dir()
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report2/")
+dir()
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report3/")
+dir()
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report4/")
+dir()
+setwd("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report5/")
+dir()
+```
+
+```{r dta_import_covidlink_voc}
+#https://www.who.int/en/activities/tracking-SARS-CoV-2-variants/
+
+#Breakthrough data VOC
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/VOC/"
+file<-list.files(directory)
+file
+#dtavoc<-read.csv(paste0(directory, file))
+#Latest file. Old ones are moved to "Old"
+dtavoc<-read.csv(paste0(directory, file[2]))
+dim(dtavoc)
+```
+
+```{r dta_import_covidlink_Report_Death}
+#Breakthrough deaths
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report_Death/"
+file<-list.files(directory)
+file
+
+dtabreak<-read.csv(paste0(directory, file[2]))
+
+dim(dtabreak)
+colnames(dtabreak) 
+
+length(unique(dtabreak$Episode.Number))
+
+dtabreakRdeath<-dtabreak%>%
+    mutate(death="Yes")%>%
+    select(Episode.Number, death)%>%
+    arrange(Episode.Number)
+```
+
+```{r dta_import_covidlink_Report_Hosp}
+#Breakthrough hospitalization
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report_Hosp/"
+file<-list.files(directory)
+file
+
+dtabreak<-read.csv(paste0(directory, file[2]))
+
+dim(dtabreak)
+colnames(dtabreak) 
+
+length(unique(dtabreak$Episode.Number))
+
+dtabreakRhosp<-dtabreak%>%
+    mutate(hosp="Yes")%>%
+    select(Episode.Number, hosp)%>%
+    arrange(Episode.Number)
+```
+
+```{r dta_import_covidlink_Report2}
+#Breakthrough ALL CASES - incomplete vaccine manufacturere data included. Otherwise, everything else is in Report 5
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report2/"
+file<-list.files(directory)
+file
+
+dtabreak<-read.csv(paste0(directory, file[2]))
+
+dim(dtabreak)
+colnames(dtabreak) 
+
+length(unique(dtabreak$Episode.Number))
+
+dtabreakR2<-dtabreak%>%
+    arrange(Episode.Number)
+
+#https://stackoverflow.com/questions/37800704/r-remove-parts-of-column-name-after-certain-characters
+#for ( col in 1:ncol(dtabreak)){
+#    colnames(dtabreak)[col] <-  sub("zzz", "", colnames(dtabreak)[col])
+#}
+
+#colnames(dtabreak)
+```
+
+```{r dta_import_covidlink_Report3}
+#Breakthrough data report 3 - used to variant info, but not available anymore 10/8/2021. Different report now published. See Report_Var below. 
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report3/"
+file<-list.files(directory)
+file
+```
+
+```{r dta_import_covidlink_Report4}
+#Breakthrough ALL CASES - county, age, race, days since, congregate housing flag
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report4/"
+file<-list.files(directory)
+file
+
+dtabreak<-read.csv(paste0(directory, file[2]))
+
+dim(dtabreak)
+colnames(dtabreak) 
+
+nmdcases<-nrow(dtabreak)
+
+length(unique(dtabreak$Episode.Number))
+
+dtabreakR4<-dtabreak%>%
+    arrange(Episode.Number)
+
+colnames(dtabreakR4)
+```
+
+```{r dta_import_covidlink_Report5}
+#Breakthrough ALL CASES - sex added - most comprehensive data 
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report5/"
+file<-list.files(directory)
+file
+
+dtabreak<-read.csv(paste0(directory, file[2]))
+
+dim(dtabreak)
+colnames(dtabreak) 
+
+nmdcases<-nrow(dtabreak)
+
+length(unique(dtabreak$Episode.Number))
+
+dtabreakR5<-dtabreak%>%
+    rename(County = Address.County)%>%
+    arrange(Episode.Number)
+
+colnames(dtabreakR5)
+```
+
+```{r dta_import_covidlink_Report_Var}
+#Breakthrough ALL CASES PLUS EXTRA with variant info 
+directory<-"~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/Breakthrough_Report_Var/"
+file<-list.files(directory)
+file
+
+dtabreak<-read.csv(paste0(directory, file[2]))
+
+dim(dtabreak)
+colnames(dtabreak) 
+
+nmdcases<-nrow(dtabreak)
+
+length(unique(dtabreak$Episode.Number))
+
+dtabreakRvar<-dtabreak%>%
+    rename(Episode.Number = Associated.Episode..Episode.Number)%>%
+    select(Episode.Number, 
+           starts_with("Variant"), starts_with("Lineage"))%>% 
+    arrange(Episode.Number)
+
+colnames(dtabreakRvar)
+
+#DUPLICATES, UGH!!!!! 
+    length(unique(dtabreakRvar$Episode.Number))
+    nrow(dtabreakRvar)
+    dim(dtabreakRvar)
+    
+    temp<-dtabreakRvar%>%
+        group_by(Episode.Number)%>%
+        mutate(
+          duplicate=n(),
+          linenumber=row_number())%>%
+        ungroup()
+    
+    table(temp$linenumber, temp$Variant.Status) #<-99.999% in line 1
+    table(temp$duplicate, temp$Variant.Status) #<-99.999% in non-duplicate 
+    
+dtabreakRvar<-dtabreakRvar%>%
+    group_by(Episode.Number)%>%
+    mutate(
+        duplicate=n(),
+        linenumber=row_number()
+        )%>%
+    ungroup()%>%
+    filter(linenumber==1)%>%
+    select(-duplicate, -linenumber)
+```
+
+```{r dtabreak}
+dim(dtabreakRdeath)
+dim(dtabreakRhosp)
+dim(dtabreakR2)
+dim(dtabreakR4)
+dim(dtabreakR5)
+dim(dtabreakRvar)
+
+    length(unique(dtabreakR5$Episode.Number))
+    length(unique(dtabreakRvar$Episode.Number))
+    
+# As of 10/8/2021, only need to merge death, hosp, R5, and var
+
+dtabreak<-dtabreakR5%>%
+    left_join(dtabreakRdeath, by="Episode.Number")%>%
+    left_join(dtabreakRhosp, by="Episode.Number")
+
+dim(dtabreak)
+#colnames(dtabreak) 
+
+dtabreak<-left_join(dtabreak, dtabreakRvar, by="Episode.Number")
+dim(dtabreak)
+#colnames(dtabreak) 
+
+dtabreak<-dtabreak%>%
+    mutate(
+        death=ifelse(is.na(death)==TRUE, "No", death),
+        hosp=ifelse(is.na(hosp)==TRUE, "No", hosp), 
+        date = as.Date(First.Specimen.Collection.Date, "%m/%d/%Y"),
+        #last30=(Sys.Date() - date<=30) & (date<Sys.Date()), 
+        last42=(Sys.Date() - date<=42) & (date<Sys.Date()) 
+        )%>%
+    mutate_if(is.factor, as.character)
+    #%>%
+    #mutate(Immunet.Manufacturer.1=ifelse(Immunet.Manufacturer.1=="Pfizer", 
+    #                                     "PFR", 
+    #                                     Immunet.Manufacturer.1))
+
+str(dtabreak$Variant.Lineage)
+table(dtabreak$Variant.Lineage)
+table(dtabreak$Variant.Status)
+table(dtabreak$Lineage.Type)
+table(dtabreak$Variant.Lineage, dtabreak$Lineage.Type)
+
+#Change VOC names: https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html#Concern
+
+#Change VOI names: https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html#Interest
+
+
+dtabreak<-dtabreak%>%
+
+    mutate(
+
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  Variant.Lineage=="", 
+                                  " Not tested"),
+
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.1.7", Variant.Lineage)==TRUE, 
+                                  "VOC: Alpha (UK)"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.351", Variant.Lineage)==TRUE, 
+                                  "VOC: Beta (South Africa)"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("P.1", Variant.Lineage)==TRUE, 
+                                  "VOC: Gamma (Japan/Brazil)"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.617.2", Variant.Lineage)==TRUE |
+                                  grepl("AY", Variant.Lineage)==TRUE |
+                                  grepl("Delta", Variant.Lineage)==TRUE, 
+                                  "VOC: Delta (India)"),
+        
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.525", Variant.Lineage)==TRUE |
+                                  grepl("Eta", Variant.Lineage)==TRUE, 
+                                  "VOI: Eta"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.526", Variant.Lineage)==TRUE|
+                                  grepl("Iota", Variant.Lineage)==TRUE, 
+                                  "VOI: Iota (US/NY)"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.617.1", Variant.Lineage)==TRUE|
+                                  grepl("Kappa", Variant.Lineage)==TRUE, 
+                                  "VOI: Kappa (India)"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.617.3", Variant.Lineage)==TRUE, 
+                                  "VOI: 20A (India)")
+        
+#        Variant.Lineage = replace(Variant.Lineage, 
+#                                  grepl("B.1.427", Variant.Lineage)==TRUE, 
+#                                  "VOI: Epsilon (US/CA)"),
+#        Variant.Lineage = replace(Variant.Lineage, 
+#                                  grepl("B.1.429", Variant.Lineage)==TRUE, 
+#                                  "VOI: Epsilon (US/CA)"),
+#        Variant.Lineage = replace(Variant.Lineage, 
+#                                  grepl("P2", Variant.Lineage)==TRUE, 
+#                                  "V other: Zeta (Brazil)")
+)
+
+#table(dtabreak$Variant.Lineage)
+table(dtabreak$Variant.Lineage, dtabreak$Lineage.Type)
+
+dtabreak<-dtabreak%>%
+    mutate(
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  Lineage.Type!="" & 
+                                  grepl("VOC:", Variant.Lineage)==FALSE & 
+                                  grepl("VOI:", Variant.Lineage)==FALSE, 
+                                  "Wild Type")
+    )
+table(dtabreak$Variant.Lineage, dtabreak$Lineage.Type)
+table(dtabreak$Variant.Lineage)
+
+#table(dtabreak$Variant.Lineage, dtabreak$Lineage.Type)
+#table(dtabreak$Variant.Lineage)
+
+dtabreakHC<-dtabreak%>%filter(County=="Harford")
+
+#table(dtabreakHC$Variant.Lineage)
+
+rhccases<-nrow(dtabreakHC)
+dim(dtabreakHC)
+```
+
+```{r dta_import_immunet}
+#Immunization level data 
+dtaimmunetNEW<-read_excel(paste0("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford ", date_dtaimmunet,".xlsx"))
+
+dtaimmunetOLD<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 04302021.xlsx")%>%
+    mutate(vdate = as.Date(VACCINATION_DATE, "%d-%b-%Y"))%>%
+    filter(vdate < as.Date("2021-03-01"))%>% #older cases before March 1
+    select(-vdate)
+
+dtaimmunet<-rbind(dtaimmunetNEW, dtaimmunetOLD)
+```
+
+```{r dta_immunet_complete}
+#CASES for people with completed vaccination with no date problems. 
+#should be consistent with "complete" in the https://rpubs.com/YJ_Choi/HCHD_covax
+dta<-as.data.frame(dtaimmunet) %>% 
+    filter(COUNTY_OF_RESIDENCE=="Harford")%>%
+    mutate(vdate	=as.Date(VACCINATION_DATE, "%d-%b-%Y"))%>%
+    arrange(CLIENT_ID, vdate)%>%
+    group_by(CLIENT_ID)%>% 
+    mutate(
+        dup=CLIENT_ID==lag(CLIENT_ID)  &
+            vdate==lag(vdate), #duplicate
+        totalnumber=n(), #Total number of vaccinations received per person
+        dosenumber=row_number() #Vaccine dose number per person, should be 1-2 
+        )%>%
+    ungroup()%>%    
+    mutate(
+        vdate = replace(vdate, vdate < as.Date("2020-12-14"), NA),
+        #completed required doses
+        complete = ((totalnumber>=2 & (MANUFACTURER=="MOD" | MANUFACTURER=="PFR")) | 
+                    (totalnumber>=1 & MANUFACTURER=="JSN")), 
+        complete=ifelse((is.na(vdate)==TRUE | MANUFACTURER==""), NA, complete))%>%
+    filter(complete==1)
+
+nvacpersons<-dta%>%filter(dosenumber==1)%>%nrow()
+pctbreakthrough<-round(100*rhccases/nvacpersons, 2)
+```
+
+```{r import_APIdtabycountyCases}
+suppressWarnings(suppressMessages(library(jsonlite)))
+suppressWarnings(suppressMessages(library(httr)))
+
+url<-("https://opendata.arcgis.com/datasets/0573e90adab5434f97b082590c503bc1_0.geojson")
+
+jsondata<-fromJSON(url) 
+    #str(jsondata)
+    
+jsondta<-jsondata[[4]]
+    #str(jsondta)
+    
+dtaapicases<-jsondta[[2]]
+
+countylist<-as.vector(colnames(dtaapicases))[-c(1:2)]
+
+```
+
+```{r dta_import_redcap_import}
+#COVID-19 case data by age from Prepmod 
+#dtaredcap<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_HCHD_redcap/DailyCaseSummary-Harford_DATA_8.6.21.xlsx")
+
+dir("~/Dropbox/0 iSquared/iSquared_Harfod/dta_HCHD_redcap/")
+
+dtaredcap<-read.csv("~/Dropbox/0 iSquared/iSquared_Harfod/dta_HCHD_redcap/DailyCaseSummary-Harford_DATA_2021-10-04_1130.csv")
+
+dim(dtaredcap)
+#colnames(dtaredcap)
+#str(dtaredcap$nedss)
+```
+
+```{r dtaredcap}
+
+names(dtaredcap)<-tolower(names(dtaredcap))
+#colnames(dtaredcap)
+    
+dtaredcap<-dtaredcap%>%
+    mutate(
+        date_of_collection=as.Date(date_of_collection), 
+        
+        vaxdose1=as.Date(vaxdose1),
+        vaxdose2=as.Date(vaxdose2),
+        
+        vaxbeforetest= vaxdose1 < date_of_collection, 
+        vaxbeforetest=ifelse(is.na(vaxbeforetest)==TRUE, FALSE, vaxbeforetest),
+        #everyone in this dataset has received at least one dose. really??  
+        
+        vax1=is.na(vaxdose1)==FALSE,  
+        vax2=is.na(vaxdose2)==FALSE,  
+        vaxnum=vax1+vax2,
+        
+        vaxdate = vaxdose2, 
+        vaxdate = ifelse(vaxnum==1, vaxdose1, vaxdate),
+        vaxdate = as.Date(vaxdate),
+        
+        dayssincevax=(date_of_collection - vaxdate),
+        dayssincevax=ifelse(vaxbeforetest==0, NA, dayssincevax),
+
+        breakthrough=0,
+        #breakthrough=ifelse(vaxbeforetest==TRUE & dayssincevax>=14, 1, breakthrough),
+        breakthrough=ifelse(vaxbeforetest==TRUE & 
+            vaxmanufacturer1=="JSN" & vaxnum==1 & dayssincevax>=14, 1, breakthrough),
+        breakthrough=ifelse(vaxbeforetest==TRUE & 
+            vaxmanufacturer1!="JSN" & vaxnum==2 & dayssincevax>=14, 1, breakthrough),
+            
+        vaxstatus=" ",  
+        vaxstatus=ifelse(vaxbeforetest==FALSE , "1.None", vaxstatus), 
+        vaxstatus=ifelse(vaxbeforetest==TRUE, "2.Partial", vaxstatus), 
+        vaxstatus=ifelse(breakthrough==1, "3.Full", vaxstatus),
+        
+        date = date_of_collection
+    )
+
+    
+dtaredcapBT<-dtaredcap%>%
+    filter(date_of_collection>=as.Date("2021-02-25"))%>%
+    filter(breakthrough==1)
+    #first date of breakthrough in Harford county 
+```
+
+```{r dta_import_hospitalization}
+dir("~/Dropbox/0 iSquared/iSquared_Harfod/dta_HCHD_COVID_hospitalization/")
+
+#Hospitalization level data
+dtahosp<-read_excel(paste0("~/Dropbox/0 iSquared/iSquared_Harfod/dta_HCHD_COVID_hospitalization/Harford ",date_dtahosp,".xlsx"))
+
+names(dtahosp)<-tolower(names(dtahosp))
+
+dim(dtahosp)
+#colnames(dtahosp)
+str(dtahosp$nedssid)
+length(unique(dtahosp$nedssid))
+length(unique(dtahosp$mdhid))
+temp<-dtahosp%>%filter(is.na(nedssid)==FALSE)
+dim(temp)
+length(unique(temp$nedssid))
+length(unique(temp$mdhid))
+
+#National Electronic Disease Surveillance System (NEDSS)
+```
+
+### 1. What is the level of breakthough cases? 
+
+#### 1.1. Trend of breakthrough cases - absolute number    
+A total of `r nmdcases` COVID-19 breakthrough cases have been identified in Maryland. __In Harford county, `r rhccases` cases have been reported.__ Below figure shows the daily number of breakthrough cases over time. 
+```{r plot_breakthrough_trend_HC, eval="FALSE"}
+#temp<-dtafig%>%filter(date>=as.Date("2021-07-01"))
+#sum(temp$cases)
+
+dtafig<-dtabreakHC%>%
+    mutate(
+        cases=1
+        )%>%
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    arrange(date)
+
+datesequence <- data.frame(date=seq(min(dtafig$date),max(dtafig$date), by='1 day'))
+
+dtafig<-full_join(datesequence, dtafig)%>%
+    mutate(
+        cases=ifelse(is.na(cases)==TRUE, 0, cases),
+        cases_7dayaverage = round(c(NA,NA,NA,NA,NA,NA,rollmean(cases, 7)),
+                                  2)
+        )
+    
+
+dtafig%>%
+    plot_ly(x=~date, 
+        y=~cases, name="Number of cases (daily)", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5) )%>%
+    add_lines( 
+        y=~cases_7dayaverage , name="Number of cases (7-day average)", 
+        marker=list(color = c("#46595F"), size=1),
+        line=list(color = c("#46595F")) )%>%    
+    layout(
+        title = c("Number of breakthrough cases by date of testing"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.95)    
+        )    
+
+```
+
+```{r plot_breakthrough_trend_MD, eval="FALSE"}
+dtafig<-dtabreak%>%
+    mutate(
+        cases=1
+        )%>%
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    arrange(date)
+
+#table(dtafig$date)
+#likely data entry error!!
+dtafig<-dtafig%>%
+    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y")) 
+
+datesequence <- data.frame(date=seq(min(dtafig$date),max(dtafig$date), by='1 day'))
+
+dtafig<-full_join(datesequence, dtafig)%>%
+    mutate(
+        cases=ifelse(is.na(cases)==TRUE, 0, cases),
+        cases_7dayaverage = round(c(NA,NA,NA,NA,NA,NA,rollmean(cases, 7)),
+                                  2)
+        )
+    
+
+dtafig%>%
+    plot_ly(x=~date, 
+        y=~cases, name="Number of cases (daily)", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5) )%>%
+    add_lines( 
+        y=~cases_7dayaverage , name="Number of cases (7-day average)", 
+        marker=list(color = c("#46595F"), size=1),
+        line=list(color = c("#46595F")) )%>%    
+    layout(
+        title = c("Number of breakthrough cases by date of testing: Maryland"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.95)    
+        )    
+
+```
+
+```{r plot_breakthrough_trend_data}
+### HARFORD
+dtafig<-dtabreakHC%>%
+    mutate(
+        cases=1
+        )%>%
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    arrange(date)
+
+datesequence <- data.frame(date=seq(min(dtafig$date),max(dtafig$date), by='1 day'))
+
+dtafig<-full_join(datesequence, dtafig)%>%
+    mutate(
+        cases=ifelse(is.na(cases)==TRUE, 0, cases),
+        cases_7dayaverage = round(c(NA,NA,NA,NA,NA,NA,rollmean(cases, 7)),
+                                  2)
+        )
+
+dtafig1<-dtafig%>%mutate(group="Harfod County")
+
+### MARYLAND
+dtafig<-dtabreak%>%
+    mutate(
+        cases=1
+        )%>%
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    arrange(date)
+
+    #table(dtafig$date)
+    #likely data entry error!!
+    dtafig<-dtafig%>%
+        filter(date<as.Date(Sys.time(	), format="%m/%d/%Y")) 
+
+datesequence <- data.frame(date=seq(min(dtafig$date),max(dtafig$date), by='1 day'))
+
+dtafig<-full_join(datesequence, dtafig)%>%
+    mutate(
+        cases=ifelse(is.na(cases)==TRUE, 0, cases),
+        cases_7dayaverage = round(c(NA,NA,NA,NA,NA,NA,rollmean(cases, 7)),
+                                  2)
+        )
+
+dtafig2<-dtafig%>%mutate(group="Maryland")
+
+### MARYLAND
+dtafig<-rbind(dtafig1, dtafig2)
+```
+
+```{r plot_breakthrough_trend_figure_panel, eval="FALSE"}
+
+panel <- . %>% 
+    plot_ly(x=~date, 
+        y=~cases, name="Number of cases (daily)", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5) )%>%
+    add_lines( 
+        y=~cases_7dayaverage , name="Number of cases (7-day average)", 
+        marker=list(color = c("#46595F"), size=1),
+        line=list(color = c("#46595F")) )%>%    
+    add_annotations(
+        text = ~unique(group),
+        x = 0.5, y = 0.85, xref = "paper", yref = "paper",    
+        xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+        font = list(size = 12)
+        ) %>%    
+    layout(
+        title = c("Number of breakthrough cases by date of testing: Maryland"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.95)    
+        )    
+
+
+dtafig%>%
+    group_by(group) %>%
+    do(p = panel(.)) %>%
+    subplot(nrows = 1, shareX = TRUE, shareY = FALSE)%>%
+    layout(
+        title = c("Number of new breakthrough cases by date: Harford County and Maryland"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number of breakthrough cases",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.95)   
+        ) 
+
+```
+
+```{r plot_breakthrough_trend_figure, results="asis"}
+fig1<-dtafig1%>% 
+    plot_ly(x=~date, 
+        y=~cases, name="Reported", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5) )%>%
+    add_lines( 
+        y=~cases_7dayaverage , name="Smoothed, 7-day average", 
+        marker=list(color = c("#46595F"), size=1),
+        line=list(color = c("#46595F")) )%>%    
+    layout(
+        title = c("Harford County"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Daily number of new breakthrough cases",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.95)    
+        )
+
+fig2<-dtafig2%>% 
+    plot_ly(x=~date, 
+        y=~cases, 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5),
+        showlegend=FALSE)%>%
+    add_lines( 
+        y=~cases_7dayaverage , 
+        marker=list(color = c("#46595F"), size=1),
+        line=list(color = c("#46595F")),
+        showlegend=FALSE)%>%    
+    layout(
+        title = c("Maryland"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Daily number of new breakthrough cases",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 )
+        )
+
+subplot(fig1, fig2, nrows=1, shareX=TRUE, shareY = FALSE)%>%
+    layout(
+        title = c("Trends of new breakthrough cases: Harford County and Maryland"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Daily number of new breakthrough cases",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 )        
+    )
+
+```
+(NOTE: the 7-day average is the mean during a week leading to the date.)
+
+```{r}
+temp<-dtabreakHC%>%
+    #likely data error in "date"" in a non HC case! 
+    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
+    mutate(
+        latest=max(date),
+        today=as.Date(Sys.time(	), format="%m/%d/%Y")
+        )%>%
+    #filter(latest-date<=6)
+    filter(today-date<=7)
+
+nbreaklastweek<-nrow(temp)
+#from<-max(temp$date)-6
+#to<-max(temp$date)
+from<-max(temp$today)-7
+to<-max(temp$today)-1
+nbreaklastweek 
+from
+to
+table(temp$date)
+```
+
+
+```{r plot_breakthrough_trend_data_redcap}
+n_breakthrough_harford = nrow(dtaredcapBT)
+#### 1.1A. Trend of breakthrough cases - absolute number REDCAP DATA
+### HARFORD
+dtafig<-dtaredcapBT%>%
+    mutate(
+        cases=1,
+        date=date_of_collection
+        )%>%
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    arrange(date)
+
+datesequence <- data.frame(date=seq(min(dtafig$date),max(dtafig$date), by='1 day'))
+
+dtafig<-full_join(datesequence, dtafig)%>%
+    mutate(
+        cases=ifelse(is.na(cases)==TRUE, 0, cases),
+        cases_7dayaverage = round(c(NA,NA,NA,NA,NA,NA,rollmean(cases, 7)),
+                                  2)
+        )
+
+dtafig1<-dtafig%>%mutate(group="Harfod County")
+
+#<span style="color: blue;">__Just for the next figure, Redcap data are used temporarily because of the delay/problem in the COVID Link data__.  A total of `r n_breakthrough_harford` breakthrough cases have been reported (CAUTION, this is at least 10% less than the number of breakthrough cases from COVID Link!). </span> <span style="color: red;">But, let's focus on the trends...</span>   
+```
+
+```{r plot_breakthrough_trend_figure_redcap}
+dtafig1%>% 
+    plot_ly(x=~date, 
+        y=~cases, name="Reported", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5) )%>%
+    add_lines( 
+        y=~cases_7dayaverage , name="Smoothed, 7-day average", 
+        marker=list(color = c("#46595F"), size=1),
+        line=list(color = c("#46595F")) )%>%    
+    layout(
+        title = c("Harford County Redcap Data"),
+        xaxis=list(title = "Date of testing (specimen collection)",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Daily number of new breakthrough cases",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.95)    
+        )
+```
+
+#### 1.2. Trend of breakthrough cases - percentage
+
+To date, among people who have been fully vaccinated in the county (n=`r nvacpersons`), __`r pctbreakthrough`%__ have had a breakthrough case - assuming no multiple breakthrough cases per person.   
+
+Following figure shows cumulative percent of fully vaccinated people who have breakthrough cases. We expect the cumulative percent to:    
+- fluctuate initially, depending on the pace of numerator increase (number of breakthrough cases - see above figure) vs. pace of denominator increase (number of people fully vaccinated), and then    
+- level-off, based on expected vaccine effectiveness.  
+
+(Rate using person years forthcoming... ) 
+
+```{r dta_breakthrough_trendcum}
+dtafig1<-dtabreakHC%>%
+    mutate(cases=1)%>%
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    select(date, cases)
+
+dtafig2<-dta%>%
+    # final vaccination date 
+    filter(totalnumber==dosenumber)%>% 
+    mutate(vacpersons=1)%>%
+    
+    mutate(vdate=vdate+14)%>% #date when they would be fully vaccinated 
+    rename(date=vdate)%>%
+    
+    group_by(date)%>%
+    summarize_at(vars(vacpersons), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    select(date, vacpersons)
+
+dtafig<-left_join(dtafig2, dtafig1, by=c("date"))%>%
+    filter(date<=max(dtafig1$date))%>% 
+    arrange(date)%>%
+    mutate(
+        cases=ifelse(is.na(cases)==TRUE, 0, cases), 
+        cumvacpersons=cumsum(vacpersons), 
+        cumcases=cumsum(cases), 
+        
+        pctbreakthrough=round(100*cumcases/cumvacpersons, 3)
+        )
+#View(dtafig1)
+#View(dtafig2)
+#View(dtafig)
+```
+
+```{r plot_breakthrough_trendcum, results='asis'}
+dtafig%>%
+    plot_ly(x=~date, 
+        y=~pctbreakthrough, name="Percent", 
+        type = 'scatter', mode='lines',
+        line=list(color = c("#999999")),
+        marker=list(color = c("#999999"), size=5))%>%
+    layout(
+        title = c("Cumulative percent breakthrough cases among fully vaccinated people"),
+        xaxis=list(title = "Date",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Percent, cumulative",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        showlegend=FALSE
+        )    
+
+```
+
+(Note: percent = 100* '# cum cases on day __X__' / '# cum fully vaccinated people on day __X-14__')  
+
+#### 1.3. Level of new cases
+```{r APIdtabycountyCases_HC}
+
+tempcases<-dtaapicases%>%
+    mutate(date=as.Date(DATE))%>%
+    select(-OBJECTID, -DATE)%>%
+
+    #likely data error in "date"" in a non HC case! 
+    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
+    gather(county, cases, countylist)%>%    
+    filter(county =="Harford")%>% 
+    
+    mutate(
+        latest=max(date)
+        )%>%
+    filter(latest-date>=0 & latest-date<=6)
+
+ncaselastweek<-max(tempcases$cases) - min(tempcases$cases)
+ncaselastweek
+fromcase<-max(tempcases$date)-6
+tocase<-max(tempcases$date)
+```
+
+```{r}
+pctbreak<-round(100*nbreaklastweek/ncaselastweek, 1)
+
+#__In Harford County in the past 7 days__ (i.e., specimen collected between `r from` and `r to`), __a total of `r nbreaklastweek` breakthrough cases were reported__. This is `r pctbreak`% of new cases reported in the county last week (n=`r ncaselastweek` new cases between `r fromcase` and `r tocase`). 
+
+```
+
+```{r}
+temp<-dtabreak%>%
+    #likely data error in "date"" in a non HC case! 
+    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
+    mutate(
+        latest=max(date),
+        today=as.Date(Sys.time(	), format="%m/%d/%Y")
+        )%>%
+    #filter(latest-date<=6)
+    filter(today-date<=7)
+
+nbreaklastweek<-nrow(temp)
+#from<-max(temp$date)-6
+#to<-max(temp$date)
+from<-max(temp$today)-7
+to<-max(temp$today)-1
+nbreaklastweek 
+from
+to
+table(temp$date)
+
+```
+
+```{r APIdtabycountyCases_MD}
+
+tempcases<-dtaapicases%>%
+    mutate(date=as.Date(DATE))%>%
+    select(-OBJECTID, -DATE)%>%
+    
+    #likely data error in "date"" in a non HC case! 
+    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
+    gather(county, cases, countylist)%>%    
+    #filter(county =="Harford")%>% 
+    
+    group_by(date)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+
+    mutate(
+        latest=max(date)
+        )%>%
+    filter(latest-date>=0 & latest-date<=6)
+
+ncaselastweek<-max(tempcases$cases) - min(tempcases$cases)
+ncaselastweek
+fromcase<-max(tempcases$date)-6
+tocase<-max(tempcases$date)
+```
+
+```{r}
+pctbreak<-round(100*nbreaklastweek/ncaselastweek, 1)
+
+#__In Maryland in the past 7 days__ (i.e., specimen collected between `r from` and `r to`), __a total of `r nbreaklastweek` breakthrough cases were reported__. This is `r pctbreak`% of new cases reported in the State last week (n=`r ncaselastweek` new cases between `r fromcase` and `r tocase`). 
+```
+
+```{r dta_trend_7day_rollingdaily}
+#number of breakthrough cases by day
+dtafig1<-dtabreakHC%>%
+    mutate(breakthrough=1)%>%
+    group_by(date)%>%
+    summarize_at(vars(breakthrough), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    select(date, breakthrough)
+
+#number of fully vaccinated peoople by day 
+dtafig2<-dta%>%
+    # final vaccination date 
+    filter(totalnumber==dosenumber)%>% 
+    mutate(vacpersons=1)%>%
+    
+    mutate(vdate=vdate+14)%>% #date when they would be fully vaccinated 
+    rename(date=vdate)%>%
+    
+    group_by(date)%>%
+    summarize_at(vars(vacpersons), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    select(date, vacpersons)
+
+#conflict_prefer("lag", "dplyr")
+#conflict_prefer("arrange", "dplyr")
+
+#number of any cases by day
+dtafig3<-dtaapicases%>%
+    mutate(date=as.Date(DATE))%>%
+    select(-OBJECTID, -DATE)%>%
+    #likely data error in "date"" in a non HC case! 
+    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
+    gather(county, cases, countylist)%>%    
+    filter(county =="Harford")%>%
+    rename(cumcases=cases)%>%
+    mutate(
+        cases=cumcases-lag(cumcases),
+        cases=ifelse(cases<0,    0, cases)
+    )
+
+
+dflist<-list(dtafig1, dtafig2, dtafig3)
+lapply(dflist, function(df) summary(df$date) )
+
+dtafig<-left_join(dtafig3, dtafig2, by=c("date"))
+    
+dtafig<-left_join(dtafig, dtafig1, by=c("date"))
+    #filter(date<=max(dtafig1$date))%>%  
+    #(this line not needed, since using API as a base)
+
+datesequence <- data.frame(date=seq(min(dtafig$date),max(dtafig$date), by='1 day'))
+
+dtafig<-full_join(datesequence, dtafig, by="date")
+
+dtafig<-dtafig%>%
+    arrange(date)%>%
+    mutate(
+        breakthrough=ifelse(is.na(breakthrough)==TRUE, 0, breakthrough ), 
+        vacpersons=ifelse(is.na(vacpersons)==TRUE, 0, vacpersons ), 
+        casesnonvac=cases-breakthrough, 
+        
+        #cumcases=cumsum(cases), 
+        #cumbreakthrough=cumsum(breakhrough), 
+        #cumcasesnonvac=cumsum(casesnonvac), 
+        pop=255441, 
+        popvac=cumsum(vacpersons), 
+        popnonvac=pop - popvac, 
+            
+        cases_7daysum = round(c(NA,NA,NA,NA,NA,NA,rollsum(cases, 7)),
+                                  2), 
+        casesnonvac_7daysum = round(c(NA,NA,NA,NA,NA,NA,rollsum(casesnonvac, 7)),
+                                  2),         
+        breakthrough_7daysum = round(c(NA,NA,NA,NA,NA,NA,rollsum(breakthrough, 7)),
+                                  2),
+        
+        level_cases=round(100000*cases_7daysum/pop, 1), 
+        level_casesnonvac=round(100000*casesnonvac_7daysum/popnonvac, 1), 
+        level_breakthrough=round(100000*breakthrough_7daysum/popvac, 1),       
+        
+        pct_casesnonvac_7daysum = round(100*casesnonvac_7daysum/cases_7daysum, 0),
+        pct_breakthrough_7daysum = round(100*breakthrough_7daysum/cases_7daysum, 0),
+        
+        #below lines: due to the gap/delay in breakthrough data 
+        #Otherwise it looks like breakthrough cases go down 
+        breakthrough_7daysum=ifelse(date>max(dtafig1$date), NA, 
+                           breakthrough_7daysum),
+        level_breakthrough=ifelse(date>max(dtafig1$date), NA, 
+                           level_breakthrough),        
+        pct_breakthrough_7daysum=ifelse(date>max(dtafig1$date), NA,
+                                       pct_breakthrough_7daysum),
+        
+        casesnonvac=ifelse(date>max(dtafig1$date), NA, 
+                           casesnonvac),
+        casesnonvac_7daysum=ifelse(date>max(dtafig1$date), NA, 
+                           casesnonvac_7daysum),
+        level_casesnonvac=ifelse(date>max(dtafig1$date), NA, 
+                           level_casesnonvac),        
+        pct_casesnonvac_7daysum=ifelse(date>max(dtafig1$date), NA,
+                                       pct_casesnonvac_7daysum),
+        
+        )
+
+```
+
+```{r plot_breakthrough_trend_7day_perpop, results='asis'}
+#conflict_prefer("layout", "plotly")
+
+dtafig%>%
+    plot_ly(x=~date, 
+        y=~level_casesnonvac, name="Non-fully vaccinated", 
+        type = 'scatter', mode='lines',
+        line=list(color = c("#d62728")),
+        marker=list(color = c("#d62728"), size=1))%>%
+    add_lines( 
+        y=~level_breakthrough, name="Fully vaccinated", 
+        line=list(color = c("#1f77b4"))
+        )%>%        
+    add_lines(
+        y=~level_cases, name="Overall", 
+        line=list(color = c("#999999")))%>%    
+    layout(
+        title = c("7-day New cases: overall, non-fully vaccinated, vs. fully vaccinated"),
+        xaxis=list(title = "Date",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Per 100,000 people",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ),
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.75)    
+        )    
+
+#<span style="color: red;">__But, this is puzzling...__     
+
+#- Why is the risk of new infection so similar between vaxed and unvaxed people? simple math looks okay...         
+#- See expected percent of breakthrough cases based on vaccine efficacy and vaccine coverage: (https://medicalguidelines.msf.org/viewport/mme/files/english/32408146/32408147/1/1528112038188/Courbe+chapitre+7.PNG)       
+#- So, is this driven by testing bias? Vaccinated people are more likely to get tested than unvaccinated people?     
+#- Or, is this because of lower effectiveness against Delta? This appears to be an important factor, based on variants data among recent breakthrough cases.     
+#- Still, hospitalization cases are mainly those unvaxed. Odds is about 10 times higher in the last two weeks among unvaxed.... </span>    
+
+```
+Note:   
+* Non breakthrough cases = total cases - breakthrough cases. This assumes date in total cases is based specimens collection date, which was used in breakthrough case data. This may not be correct, but the implication is minor as long as there is only minimal report delay.    
+* Fully vaccinated population on day X = population who received second/final dose 14 days ago (X-14).    
+* Not fully vaccinated population = total population - fully vaccinated population  * See detailed numerators and denominators below.      
+
+```{r plot_breakthrough_trend_7day_den, results='asis'}
+#conflict_prefer("layout", "plotly")
+
+dtafig%>%
+    filter(date>=as.Date("2021-01-01"))%>%
+    plot_ly(x=~date, 
+        y=~popnonvac, name="Non-fully vaccinated", 
+        type = 'scatter', mode='lines',
+        line=list(color = c("#d62728")),
+        marker=list(color = c("#d62728"), size=1))%>%
+    add_lines( 
+        y=~popvac, name="Fully vaccinated", 
+        line=list(color = c("#1f77b4"))
+        )%>%        
+    add_lines(
+        y=~pop, name="Overall population", 
+        line=list(color = c("#999999")))%>%    
+    layout(
+        title = c("Popualtion: non-fully vaccinated, vs. fully vaccinated"),
+        xaxis=list(title = "Date",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ),
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.50)    
+        )    
+
+```
+
+```{r plot_breakthrough_trend_7day_num, results='asis'}
+#conflict_prefer("layout", "plotly")
+
+dtafig%>%
+    filter(date>=as.Date("2021-01-01"))%>%   
+
+    #section starts for weekly data
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14) 
+        )%>%
+    group_by(retroweek)%>%
+    mutate(
+        retroweekdate= max(date, na.rm = TRUE)
+        )%>%
+    ungroup()%>%
+    filter(date==retroweekdate)%>%
+    #section ends
+    
+    plot_ly(x=~date, 
+        y=~casesnonvac_7daysum, name="Non-fully vaccinated", 
+        type = 'bar', 
+        marker=list(color = c("#d62728")) )%>%
+    add_trace( 
+        y=~breakthrough_7daysum, name="Fully vaccinated", 
+        marker=list(color = c("#1f77b4")) )%>%        
+    layout(
+        barmode = 'stack', 
+        title = c("cases: non-fully vaccinated, vs. fully vaccinated"),
+        xaxis=list(title = "Date",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ),
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.05)    
+        )    
+
+```
+
+```{r plot_breakthrough_trend_7day_num_pct, results='asis'}
+#conflict_prefer("layout", "plotly")
+
+dtafig%>%
+    filter(date>=as.Date("2021-01-01"))%>%   
+    
+    #section starts for weekly data
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14) 
+        )%>%
+    group_by(retroweek)%>%
+    mutate(
+        retroweekdate= max(date, na.rm = TRUE)
+        )%>%
+    ungroup()%>%
+    filter(date==retroweekdate)%>%
+    #section ends
+    
+    plot_ly(x=~date, 
+        y=~pct_casesnonvac_7daysum, name="Non-fully vaccinated", 
+        type = 'bar', 
+        marker=list(color = c("#d62728")) )%>%
+    add_trace( 
+        y=~pct_breakthrough_7daysum, name="Fully vaccinated", 
+        marker=list(color = c("#1f77b4")) )%>%        
+    layout(
+        barmode = 'stack', 
+        title = c("Percent distribution: non-fully vaccinated, vs. fully vaccinated"),
+        xaxis=list(title = "Date",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ),
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.05)    
+        )    
+
+```
+#### 1.4. Can we estimate vaccine effectiveness - to prevent cases?    
+__Below figure shows expected percent of breakthrough cases based on vaccine efficacy and vaccine coverage, according to [Chen and Orenstein (1996).](https://pubmed.ncbi.nlm.nih.gov/9021306/)__ But, this method requires routine (unbiased) surveillance system...   
+```{r ChenOrensteinFig2, results='asis', fig.align="left", out.width = "500px"}
+knitr::include_graphics("Chen Orenstein 1996 Fig 2.png")
+```
+
+```{r}
+temp<-dtafig%>%
+    filter(date>=as.Date("2021-01-01"))%>%   
+    
+    #section starts for weekly data
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14) 
+        )%>%
+    group_by(retroweek)%>%
+    mutate(
+        retroweekdate= max(date, na.rm = TRUE)
+        )%>%
+    ungroup()%>%
+    filter(date==retroweekdate)%>%
+    #section ends
+    
+    mutate(
+        pctbreakthrough = pct_breakthrough_7daysum, 
+        pctfullyvax=round(100*(popvac/ pop), 1), 
+        ve = 1-((pctbreakthrough/(100-pctbreakthrough))*((100-pctfullyvax)/pctfullyvax)), 
+        ve = round(ve*100, 1)      
+    )
+
+dim(temp)
+colnames(temp)
+  
+temptext<-temp%>%filter(date==max(date)) #latest numbers for text
+
+ve<-temptext$ve
+pctbreakthrough<-temptext$pct_breakthrough_7daysum
+pctfullyvax<-temptext$pctfullyvax
+```
+
+```{r dtave}
+#Below are current statistics in the county, and implied vaccine effectiveness (using the equation 4 in the paper):       
+#- Current vaccine coverage in the county (%) = `r pctfullyvax`      
+#- Percent of breakthrough cases in the county in the last 7 days = `r pctbreakthrough`          
+#- Implied vaccine effectiveness (%) = `r ve`   
+#__NOTE: this may be under-estimated due to likely care-seeking bias among those not fully vaccinated (i.e., less seeking for testing among those not fully vaccinated).__ That means the Chen-Orenstein method _cannot_ be used because "case surveillance" is problematic. See below trend figure...   
+
+dtave<-dtafig%>%
+    filter(date>=as.Date("2021-01-01"))%>%
+
+    mutate(
+        breakthrough14=c(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,
+                                rollsum(breakthrough, 14)),
+        cases14=c(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,
+                                rollsum(cases, 14)),   
+        pctbreakthrough=round(100*breakthrough14/cases14, 1),
+        pctbreakthrough=c(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,
+                                rollmean(pctbreakthrough, 14)),  
+        pctbreakthrough=pct_breakthrough_7daysum,
+        pctbreakthrough=c(NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,
+                                rollmean(pctbreakthrough, 14)),  
+        pctfullyvax=round(100*(popvac/ pop), 1), 
+        ve = 1-((pctbreakthrough/(100-pctbreakthrough))*((100-pctfullyvax)/pctfullyvax)), 
+        ve = round(ve*100, 1)      
+    )
+
+temp<-dtave%>%filter(date==max(date)) #latest numbers for text
+
+ve<-temp$ve
+pctbreakthrough<-temp$pct_breakthrough_7daysum
+pctfullyvax<-temp$pctfullyvax
+
+```
+
+```{r, results="asis", eval=FALSE}
+#Finally, below is implied trend of vaccine effectiveness.
+dtave%>%
+    filter(date>=as.Date("2021-01-01"))%>%
+    mutate(ve=ifelse(ve<0, NA, ve))%>%
+             
+    plot_ly(x=~date, 
+        y=~ve, name="Estimated vaccine effectiveness", 
+        type = 'scatter', mode='lines',
+        line=list(color = c("#99999")),
+        marker=list(color = c("#99999"), size=1))%>%
+    add_lines( 
+        y=~pctbreakthrough, name="Percent breakthrough cases, smoothed**", 
+        line=list(color = c("red"))
+        )%>%        
+    add_lines(
+        y=~pctfullyvax, name="Percent total population fully vaccinated", 
+        line=list(color = c("blue")))%>%  
+  
+    layout(
+        title = c("Trend of estimated vaccine effectiveness"),
+        xaxis=list(title = "Date",  
+                 font=list(size=10),
+                 tickfont = list(size=10),
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Percent",
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ),
+        legend = list(font=list(size=12), 
+                  orientation = "v", xanchor = "left",  
+                  x=0.05, y=0.50)    
+        )   
+
+#Note: The percent of breakthrough cases (smoothed over 14 days) are very likely over-estimated (especially when the total number of new cases are low), implying problems in "case surveillance". Negative effectiveness values are suppressed.    
+```
+
+### 2. What are characteristics of breakthough cases?
+#### 2.1. Timing of breakthough cases since the second/final dose
+```{r plot_breakthrough_timesincevac, results='asis'}
+dtafig1<-dtabreakHC%>%
+    mutate(cases=1)%>%
+    #group_by(Days.from.Final.Dose.to.Spec.Date)%>% (var name changed on 8/2/2021)
+    group_by(Days.Since.Final.Dose)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(group="Harford county")
+
+dtafig2<-dtabreak%>%
+    #drop one case that is likely an error. specimen collection date>today   
+    filter(date< as.Date(Sys.time(	), format="%m/%d/%Y") )%>%
+    mutate(cases=1)%>%
+    group_by(Days.Since.Final.Dose)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(group="Maryland")
+
+#dtafig<-left_join(dtafig2, dtafig1, by=c("Days.Since.Final.Dose"))
+dtafig<-rbind(dtafig1, dtafig2)
+
+panel <- . %>% 
+    plot_ly(x=~Days.Since.Final.Dose, 
+        y=~cases, name="Number of cases", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5))%>%
+    #add_lines(
+    #    x = 240,
+    #    marker=list(color = c("#636363"), size=1),
+    #    line=list(color = c("#636363")) ) %>%
+    add_annotations(
+        text = ~unique(group),
+        x = 0.5, y = 0.85, xref = "paper", yref = "paper",    
+        xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+        font = list(size = 12)
+        ) %>%
+    layout(
+        title = c("Number of breakthrough cases by days since the second dose"),
+        xaxis=list(title = "Number of days since second dose",  
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 range=c(0, max(dta$Days.Since.Final.Dose)), 
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number of breakthrough cases", 
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        showlegend = FALSE
+        )
+
+dtafig%>%
+    group_by(group) %>%
+    do(p = panel(.)) %>%
+    subplot(nrows = 1, shareX = TRUE, shareY = FALSE)%>%
+        layout(
+        yaxis=list(title = "Number of breakthrough cases"), 
+        xaxis=list(title = "Number of days since second dose",  
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 range=c(0, max(dta$Days.Since.Final.Dose)), 
+                 showgrid = FALSE
+                 )
+        ) 
+```
+
+```{r}
+dtanote<-dtafig1%>%
+    arrange(Days.Since.Final.Dose)%>%
+    mutate(cumcases=100*cumsum(cases)/sum(cases))
+
+temp<-dtanote%>%filter(cumcases>=75)
+day75pct<-as.character(min(temp$Days.Since.Final.Dose))
+
+temp<-dtanote%>%filter(cumcases>=50)
+day50pct<-as.character(min(temp$Days.Since.Final.Dose))
+
+```
+In Harford county, 50% of breakthrough cases occurred within `r day50pct` days after receiving the second dose. 75% of breakthrough cases occurred within `r day75pct` days. 
+
+```{r}
+dtanote<-dtafig2%>%
+    arrange(Days.Since.Final.Dose)%>%
+    mutate(cumcases=100*cumsum(cases)/sum(cases))
+
+temp<-dtanote%>%filter(cumcases>=75)
+day75pct<-as.character(min(temp$Days.Since.Final.Dose))
+
+temp<-dtanote%>%filter(cumcases>=50)
+day50pct<-as.character(min(temp$Days.Since.Final.Dose))
+
+```
+In Maryland, similarly, 50% of breakthrough cases occurred within `r day50pct` days after receiving the second dose. 75% of breakthrough cases occurred within `r day75pct` days.   
+
+But, by age group, the distribution is little different. See below. 
+
+```{r plot_breakthrough_timesincevac_ByAge, results='asis'}
+dtafig1<-dtabreakHC%>%
+    mutate(
+        cases=1,
+        agegroup="39 and under",
+        agegroup=replace(agegroup, Age.Group=="40-49", "40-59"),
+        agegroup=replace(agegroup, Age.Group=="50-59", "40-59"),
+        agegroup=replace(agegroup, Age.Group=="60-69", "60+"),
+        agegroup=replace(agegroup, Age.Group=="70+", "60+")
+        )%>%
+    group_by(agegroup, Days.Since.Final.Dose)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(group="Harford county")
+
+dtafig2<-dtabreak%>%
+    #drop one case that is likely an error. test positive 286 days after 
+    #drop one case that is likely an error. specimen collection date>today   
+    filter( date< as.Date(Sys.time(), format="%m/%d/%Y") )%>%
+    mutate(
+        cases=1,
+        agegroup="39 and under",
+        agegroup=replace(agegroup, Age.Group=="40-49", "40-59"),
+        agegroup=replace(agegroup, Age.Group=="50-59", "40-59"),
+        agegroup=replace(agegroup, Age.Group=="60-69", "60+"),
+        agegroup=replace(agegroup, Age.Group=="70+", "60+")
+        )%>%
+    group_by(agegroup, Days.Since.Final.Dose)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(group="Maryland")
+
+#dtafig<-left_join(dtafig2, dtafig1, by=c("Days.Since.Final.Dose"))
+dtafig<-rbind(dtafig1, dtafig2)
+
+panel <- . %>% 
+    plot_ly(x=~Days.Since.Final.Dose, 
+        y=~cases, name="Number of cases", 
+        type = 'bar',
+        marker=list(color = c("#abd9e9"), size=5))%>%
+    add_annotations(
+        text = ~unique(group),
+        x = 0.5, y = 0.90, xref = "paper", yref = "paper",    
+        xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+        font = list(size = 12)
+        ) %>%
+    add_annotations(
+        text = ~unique(agegroup),
+        x = 0.5, y = 0.80, xref = "paper", yref = "paper",    
+        xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+        font = list(size = 12)
+        ) %>%    
+    layout(
+        title = c("Number of breakthrough cases by days since the second dose"),
+        xaxis=list(title = "Number of days since second dose",  
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 range=c(0, max(dta$Days.Since.Final.Dose)), 
+                 showgrid = FALSE
+                 ),
+        yaxis=list(title = "Number of breakthrough cases", 
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 showgrid = FALSE
+                 ), 
+        showlegend = FALSE
+        )
+
+dtafig%>%
+    group_by(group, agegroup) %>%
+    do(p = panel(.)) %>%
+    subplot(nrows = 2, shareX = TRUE, shareY = FALSE)%>%
+        layout(
+        yaxis=list(title = "Number of breakthrough cases"), 
+        xaxis=list(title = "Number of days since second dose",  
+                 font=list(size=10),
+                 tickfont = list(size=10), 
+                 range=c(0, max(dta$Days.Since.Final.Dose)), 
+                 showgrid = FALSE
+                 )
+        ) 
+```
+
+
+#### 2.1.A. Survival analysis
+No ID to merge immunet data and breakthrough data. need to check all COVID link reports variables.   
+```{r}
+colnames(dtabreak)
+
+str(dtabreak$IMMUNET.Client.ID)
+
+colnames(dtaimmunet)
+
+str(dtaimmunet$CLIENT_ID)
+
+str(dtaimmunet$CPT_CODE)
+
+```
+
+```{r dta_table_HC, eval=FALSE}
+#### 2.2. Other characteristics among all breakthrough cases
+#NOTE: The following table is __cumulative data among all breakthrough cases__. 
+
+#Note: As the total number of breakthrough cases grows, however, we should dis-aggregate this by recency (e.g., in the past month). Also, we should consider if we should compare it against general or non-breakthrough cases. If so, for what characteristics, considering different testing rates - i.e., likely lower testing rate among fully immunized people, since (1) they are not recommended to be tested when they are exposed to a case and (2) breakthrough cases are more likely to be asymptomatic. 
+
+tempHC1<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=Age.Group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC1a<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=death)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC1b<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=hosp)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC2<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=Having.Symptoms)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC3<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=Variant.Lineage)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " Not tested", group),
+           pct=round(100*cases/sum(cases), 1))%>%
+    relocate(background, .before = group)
+
+tempHC4<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=Immunet.Manufacturer.1)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC5<-dtabreakHC%>%
+    mutate(cases=1, 
+           group=Congregate.Housing.Flag)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+```    
+
+```{r dta_table_MD, eval=FALSE}
+tempMD1<-dtabreak%>%
+    mutate(cases=1, 
+           group=Age.Group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD1a<-dtabreak%>%
+    mutate(cases=1, 
+           group=death)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD1b<-dtabreak%>%
+    mutate(cases=1, 
+           group=hosp)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD2<-dtabreak%>%
+    mutate(cases=1, 
+           group=Having.Symptoms)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD3<-dtabreak%>%
+    mutate(cases=1, 
+           group=Variant.Lineage)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " Not tested", group),
+           pct=round(100*cases/sum(cases), 1))%>%
+    relocate(background, .before = group)
+
+tempMD4<-dtabreak%>%
+    mutate(cases=1, 
+           group=Immunet.Manufacturer.1)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD5<-dtabreak%>%
+    mutate(cases=1, 
+           group=Congregate.Housing.Flag)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+```    
+
+```{r dta_table, eval=FALSE}
+temp1<-right_join(tempHC1, tempMD1, by=c("background", "group"))
+temp1a<-right_join(tempHC1a, tempMD1a, by=c("background", "group"))
+temp1b<-right_join(tempHC1b, tempMD1b, by=c("background", "group"))
+temp2<-right_join(tempHC2, tempMD2, by=c("background", "group"))
+temp3<-right_join(tempHC3, tempMD3, by=c("background", "group"))%>%arrange(group)
+temp4<-right_join(tempHC4, tempMD4, by=c("background", "group"))
+temp5<-right_join(tempHC5, tempMD5, by=c("background", "group"))
+
+temp1title<-data.frame(background = "By Age", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp1atitle<-data.frame(background = "By death", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp1btitle<-data.frame(background = "By hospitalization", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp2title<-data.frame(background = "By Having.Symptoms", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp3title<-data.frame(background = "By Variant.Lineage", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp4title<-data.frame(background = "By Manufacturer", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp5title<-data.frame(background = "By Congregate.Housing", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+dtasummary<-rbind(temp1title, temp1, 
+                  temp1atitle, temp1a, 
+                  temp1btitle, temp1b, 
+                  temp2title, temp2, 
+                  temp3title, temp3, 
+                  temp4title, temp4, 
+                  temp5title, temp5 
+                  
+                  )
+```    
+
+```{r table_breakthrough, eval=FALSE}
+dtasummary<-dtasummary%>%
+    mutate(
+        cases.x=as.character(cases.x),
+        cases.x=ifelse(is.na(cases.x)==TRUE, "", cases.x),
+        cases.y=as.character(cases.y),
+        cases.y=ifelse(is.na(cases.y)==TRUE, "", cases.y),
+        pct.x=as.character(pct.x),
+        pct.x=ifelse(is.na(pct.x)==TRUE, "", pct.x),
+        pct.y=as.character(pct.y),
+        pct.y=ifelse(is.na(pct.y)==TRUE, "", pct.y)
+        )
+
+names(dtasummary)<-c("Group", 
+                     "Group.label",
+                     "Number of breakthrough cases: Harford county", 
+                     "Percent of breakthrough cases: Harford county",
+                     "Number of breakthrough cases: Maryland", 
+                     "Percent of breakthrough cases: Maryland"
+                     ) 
+
+kable(dtasummary, caption = "COVID-19 breakthrough cases by group: Harford county vs. Maryland")%>%
+    kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F)%>%
+    column_spec(3, width = "10em")%>%
+    column_spec(4, width = "5em", background = "#B6D2E7")%>%
+    column_spec(5, width = "10em")%>%
+    column_spec(6, width = "5em", background = "#B6D2E7")
+```
+
+#### 2.2. Other characteristics among breakthrough cases by period: prior to vs. during the last 6 weeks    
+
+```{r dta_table_HC_recent}
+tempHC1<-dtabreakHC%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Age.Group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC1a<-dtabreakHC%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=death)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC1b<-dtabreakHC%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=hosp)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC2<-dtabreakHC%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Having.Symptoms)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC3<-dtabreakHC%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Variant.Lineage)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " Not tested", group),
+           pct=round(100*cases/sum(cases), 2))%>%
+    relocate(background, .before = group)
+
+tempHC5<-dtabreakHC%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Congregate.Housing.Flag)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+```    
+
+```{r dta_table_MD_recent}
+tempMD1<-dtabreak%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Age.Group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD1a<-dtabreak%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=death)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD1b<-dtabreak%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=hosp)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD2<-dtabreak%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Having.Symptoms)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD3<-dtabreak%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Variant.Lineage)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " Not tested", group),
+           pct=round(100*cases/sum(cases), 2))%>%
+    relocate(background, .before = group)
+
+tempMD5<-dtabreak%>%
+    filter(last42==TRUE)%>%
+    mutate(cases=1, 
+           group=Congregate.Housing.Flag)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+```    
+
+```{r dta_table_recent}
+temp1<-right_join(tempHC1, tempMD1, by=c("background", "group"))
+temp1a<-right_join(tempHC1a, tempMD1a, by=c("background", "group"))
+temp1b<-right_join(tempHC1b, tempMD1b, by=c("background", "group"))
+temp2<-right_join(tempHC2, tempMD2, by=c("background", "group"))
+temp3<-right_join(tempHC3, tempMD3, by=c("background", "group"))%>%arrange(group)
+#temp4<-right_join(tempHC4, tempMD4, by=c("background", "group"))
+temp5<-right_join(tempHC5, tempMD5, by=c("background", "group"))
+
+temp1title<-data.frame(background = "By Age", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp1atitle<-data.frame(background = "By death", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp1btitle<-data.frame(background = "By hospitalization", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp2title<-data.frame(background = "By Having.Symptoms", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp3title<-data.frame(background = "By Variant.Lineage", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+#temp4title<-data.frame(background = "By Manufacturer", group="", 
+#                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp5title<-data.frame(background = "By Congregate.Housing", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp1<-rbind(temp1title, temp1)%>%mutate(groupnum=1)
+temp1a<-rbind(temp1atitle, temp1a)%>%mutate(groupnum=1.1)
+temp1b<-rbind(temp1btitle, temp1b)%>%mutate(groupnum=1.2)
+temp2<-rbind(temp2title, temp2)%>%mutate(groupnum=2)
+temp3<-rbind(temp3title, temp3)%>%mutate(groupnum=3)
+#temp4<-rbind(temp4title, temp4)%>%mutate(groupnum=4)
+temp5<-rbind(temp5title, temp5)%>%mutate(groupnum=5)
+
+dtasummaryrecent<- rbind(temp1, temp1a, temp1b, temp2, temp3, temp5)
+
+dtasummaryrecent<-dtasummaryrecent%>%
+    mutate(
+        cases.x=as.character(cases.x),
+        cases.x=ifelse(is.na(cases.x)==TRUE, "", cases.x),
+        cases.y=as.character(cases.y),
+        cases.y=ifelse(is.na(cases.y)==TRUE, "", cases.y),
+        pct.x=as.character(pct.x),
+        pct.x=ifelse(is.na(pct.x)==TRUE, "", pct.x),
+        pct.y=as.character(pct.y),
+        pct.y=ifelse(is.na(pct.y)==TRUE, "", pct.y)
+        )
+
+names(dtasummaryrecent)<-c("Group", 
+                     "Group.label",
+                     "Number of breakthrough cases in the last 6 weeks: Harford county", 
+                     "Percent of breakthrough cases in the last 6 weeks: Harford county",
+                     "Number of breakthrough cases in the last 6 weeks: Maryland", 
+                     "Percent of breakthrough cases in the last 6 weeks: Maryland",
+                     "groupnum"
+                     ) 
+
+```    
+
+```{r table_breakthrough_recent, eval=FALSE}
+kable(dtasummaryrecent, caption = "COVID-19 breakthrough cases by group: Harford county vs. Maryland")%>%
+    kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F)%>%
+    column_spec(3, width = "10em")%>%
+    column_spec(4, width = "5em", background = "#D2E7B6")%>%
+    column_spec(5, width = "10em")%>%
+    column_spec(6, width = "5em", background = "#D2E7B6")
+```
+
+```{r dta_table_HC_older}
+tempHC1<-dtabreakHC%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Age.Group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC1a<-dtabreakHC%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=death)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC1b<-dtabreakHC%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=hosp)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC2<-dtabreakHC%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Having.Symptoms)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempHC3<-dtabreakHC%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Variant.Lineage)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " Not tested", group),
+           pct=round(100*cases/sum(cases), 2))%>%
+    relocate(background, .before = group)
+
+tempHC5<-dtabreakHC%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Congregate.Housing.Flag)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+```    
+
+```{r dta_table_MD_older}
+tempMD1<-dtabreak%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Age.Group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD1a<-dtabreak%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=death)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD1b<-dtabreak%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=hosp)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD2<-dtabreak%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Having.Symptoms)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+tempMD3<-dtabreak%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Variant.Lineage)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " Not tested", group),
+           pct=round(100*cases/sum(cases), 2))%>%
+    relocate(background, .before = group)
+
+tempMD5<-dtabreak%>%
+    filter(last42==FALSE)%>%
+    mutate(cases=1, 
+           group=Congregate.Housing.Flag)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+```    
+
+```{r dta_table_older}
+temp1<-right_join(tempHC1, tempMD1, by=c("background", "group"))
+temp1a<-right_join(tempHC1a, tempMD1a, by=c("background", "group"))
+temp1b<-right_join(tempHC1b, tempMD1b, by=c("background", "group"))
+temp2<-right_join(tempHC2, tempMD2, by=c("background", "group"))
+temp3<-right_join(tempHC3, tempMD3, by=c("background", "group"))%>%arrange(group)
+#temp4<-right_join(tempHC4, tempMD4, by=c("background", "group"))
+temp5<-right_join(tempHC5, tempMD5, by=c("background", "group"))
+
+temp1title<-data.frame(background = "By Age", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp1atitle<-data.frame(background = "By death", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp1btitle<-data.frame(background = "By hospitalization", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp2title<-data.frame(background = "By Having.Symptoms", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp3title<-data.frame(background = "By Variant.Lineage", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+#temp4title<-data.frame(background = "By Manufacturer", group="", 
+#                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+temp5title<-data.frame(background = "By Congregate.Housing", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+
+temp1<-rbind(temp1title, temp1)%>%mutate(groupnum=1)
+temp1a<-rbind(temp1atitle, temp1a)%>%mutate(groupnum=1.1)
+temp1b<-rbind(temp1btitle, temp1b)%>%mutate(groupnum=1.2)
+temp2<-rbind(temp2title, temp2)%>%mutate(groupnum=2)
+temp3<-rbind(temp3title, temp3)%>%mutate(groupnum=3)
+#temp4<-rbind(temp4title, temp4)%>%mutate(groupnum=4)
+temp5<-rbind(temp5title, temp5)%>%mutate(groupnum=5)
+
+dtasummaryolder<- rbind(temp1, temp1a, temp1b, temp2, temp3, temp5) 
+
+
+dtasummaryolder<-dtasummaryolder%>%
+    mutate(
+        cases.x=as.character(cases.x),
+        cases.x=ifelse(is.na(cases.x)==TRUE, "", cases.x),
+        cases.y=as.character(cases.y),
+        cases.y=ifelse(is.na(cases.y)==TRUE, "", cases.y),
+        pct.x=as.character(pct.x),
+        pct.x=ifelse(is.na(pct.x)==TRUE, "", pct.x),
+        pct.y=as.character(pct.y),
+        pct.y=ifelse(is.na(pct.y)==TRUE, "", pct.y)
+        )
+
+names(dtasummaryolder)<-c("Group", 
+                     "Group.label",
+                     "Number of breakthrough cases prior to the last 6 weeks: Harford county", 
+                     "Percent of breakthrough cases prior to the last 6 weeks: Harford county",
+                     "Number of breakthrough cases prior to the last 6 weeks: Maryland", 
+                     "Percent of breakthrough cases prior to the last 6 weeks: Maryland", 
+                     "groupnum"
+                     ) 
+```
+
+```{r table_breakthrough_older, eval=FALSE}
+kable(dtasummaryolder, caption = "COVID-19 breakthrough cases by group: Harford county vs. Maryland")%>%
+    kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F)%>%
+    column_spec(3, width = "10em")%>%
+    column_spec(4, width = "5em", background = "#D2E7B6")%>%
+    column_spec(5, width = "10em")%>%
+    column_spec(6, width = "5em", background = "#D2E7B6")
+```
+
+```{r dta_table_by_period}
+dim(dtasummaryolder)
+dim(dtasummaryrecent)
+
+length(unique(dtasummaryolder$Group.label))
+length(unique(dtasummaryrecent$Group.label))
+
+dtasummary<-left_join(dtasummaryolder, 
+                      dtasummaryrecent[, 2:ncol(dtasummaryrecent)],
+                      by = c("groupnum", "Group.label") )%>%
+    select(-groupnum)
+    
+varlist<-dtasummary%>%select(3:10)%>%colnames() 
+dtasummary<-dtasummary%>%
+    mutate_at(vars(varlist),
+              funs(ifelse(is.na(.)==TRUE,  "", .)))
+
+dim(dtasummary)
+
+names(dtasummary)<-c("Group", 
+                     "Group.label",
+                     "In the last 6 weeks: Harford county, Number",
+                     "In the last 6 weeks: Harford county, %",
+                     "In the last 6 weeks: MD, Number",
+                     "In the last 6 weeks: MD, %",
+                     "Prior to the last 6 weeks: Harford county, Number",
+                     "Prior to the last 6 weeks: Harford county, %",
+                     "Prior to the last 6 weeks: MD, Number",
+                     "Prior to the last 6 weeks: MD, %"
+                     ) 
+```
+
+```{r table_breakthrough_by_period, results="asis"}
+kable(dtasummary, caption = "COVID-19 breakthrough cases by group: prior to vs. during the last 6 weeks")%>%
+    kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F)%>%
+    column_spec(3, width = "5em")%>%
+    column_spec(4, width = "5em", background = "#F1F7E7")%>%
+    column_spec(5, width = "5em")%>%
+    column_spec(6, width = "5em", background = "#F1F7E7")%>%
+    column_spec(7, width = "5em")%>%
+    column_spec(8, width = "5em", background = "#D2E7B6")%>%
+    column_spec(9, width = "5em")%>%
+    column_spec(10, width = "5em", background = "#D2E7B6")
+```
+
+#### 2.3. Characteristics comparison: breatkthrough vs. non-breakthrough cases
+
+Work in progress using Redcap/Prepmod data
+
+```{r}
+table(dtaredcap$vaxbeforetest, useNA = "always")
+table(dtaredcap$vaxstatus, useNA = "always")
+table(dtaredcap$breakthrough, useNA = "always") 
+table(dtaredcap$vaxstatus, dtaredcap$vaxbeforetest, useNA = "always")
+table(dtaredcap$vaxstatus, dtaredcap$breakthrough, useNA = "always")
+
+table(dtaredcap$vaxmanufacturer1, useNA = "always")
+table(dtaredcap$vaxnum, useNA = "always")
+#table(dtaredcap$dayssincevax, dtaredcap$vaxbeforetest, useNA = "always")
+min(dtaredcap$dayssincevax, na.rm = TRUE)
+max(dtaredcap$dayssincevax, na.rm = TRUE)
+#table(dtaredcap$dayssincevax)
+
+min(dtaredcap$vaxdate, na.rm = TRUE)
+max(dtaredcap$vaxdate, na.rm = TRUE)
+```
+
+```{r}
+temp<-dtaredcap%>%
+    select(date_of_collection, starts_with(c("vax", "vac", "days")))%>%
+    filter(vaxstatus=="2.Partial")
+    
+table(temp$vaxmanufacturer1, temp$vaxnum, useNA = "always")
+table(temp$dayssincevax, temp$vaxnum, useNA = "always")
+
+temp<-dtaredcap%>%
+    select(date_of_collection, starts_with(c("vax", "vac", "days")))%>%
+    filter(vaxstatus=="3.Full")
+    
+table(temp$vaxmanufacturer1, temp$vaxnum, useNA = "always")
+
+
+
+```
+
+```{r table_comparison_prep}
+dtaredcaprecent<-dtaredcap%>%
+    filter(date_of_collection>as.Date("2021-07-01"))
+
+temp0break<-dtaredcaprecent%>%filter(vaxstatus=="3.Full")%>%
+    mutate(cases=1)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    mutate(background="",
+           group="",
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp1break<-dtaredcaprecent%>%filter(vaxstatus=="3.Full")%>%
+    mutate(cases=1, 
+           group=gender)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp2break<-dtaredcaprecent%>%filter(vaxstatus=="3.Full")%>%
+    mutate(cases=1, 
+           group=age_group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp3break<-dtaredcaprecent%>%filter(vaxstatus=="3.Full")%>%
+    mutate(cases=1, 
+           group=hospitalized)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp0nonbreak<-dtaredcaprecent%>%filter(vaxstatus!="3.Full")%>%
+    mutate(cases=1)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    mutate(background="",
+           group="",
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp1nonbreak<-dtaredcaprecent%>%filter(vaxstatus!="3.Full")%>%
+    mutate(cases=1, 
+           group=gender)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp2nonbreak<-dtaredcaprecent%>%filter(vaxstatus!="3.Full")%>%
+    mutate(cases=1, 
+           group=age_group)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+
+temp3nonbreak<-dtaredcaprecent%>%filter(vaxstatus!="3.Full")%>%
+    mutate(cases=1, 
+           group=hospitalized)%>%
+    group_by(group)%>%
+    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()%>%
+    mutate(background="",
+           group=ifelse(group=="", " missing", group),
+           pct=round(100*cases/sum(cases), 0))%>%
+    relocate(background, .before = group)
+```
+
+```{r table_comparison_append}
+temp0<-full_join(temp0break, temp0nonbreak, by=c("background", "group"))
+temp1<-full_join(temp1break, temp1nonbreak, by=c("background", "group"))
+temp2<-full_join(temp2break, temp2nonbreak, by=c("background", "group"))
+temp3<-full_join(temp3break, temp3nonbreak, by=c("background", "group"))
+
+temp0title<-data.frame(background = "Total", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp1title<-data.frame(background = "By sex", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp2title<-data.frame(background = "By age group", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+temp3title<-data.frame(background = "By hospitalization *", group="", 
+                       cases.x = NA, pct.x = NA, cases.y = NA, pct.y = NA)
+
+dtasummary<-rbind(temp0title, temp0,
+                  temp1title, temp1, 
+                  temp2title, temp2,
+                  temp3title, temp3)
+
+```    
+
+```{r table_comparison}
+dtasummary<-dtasummary%>%
+    mutate(
+        cases.x=as.character(cases.x),
+        cases.x=ifelse(is.na(cases.x)==TRUE, "", cases.x),
+        cases.y=as.character(cases.y),
+        cases.y=ifelse(is.na(cases.y)==TRUE, "", cases.y),
+        pct.x=as.character(pct.x),
+        pct.x=ifelse(is.na(pct.x)==TRUE, "", pct.x),
+        pct.y=as.character(pct.y),
+        pct.y=ifelse(is.na(pct.y)==TRUE, "", pct.y)
+        )
+
+names(dtasummary)<-c("Group", 
+                     "Group.label",
+                     "Number of breakthrough cases", 
+                     "Percent of breakthrough cases",
+                     "Number of NON breakthrough cases", 
+                     "Percent of NON breakthrough cases"
+                     ) 
+
+kable(dtasummary, caption = "COVID-19 cases since July 1, by background: breakthrough vs. NON-breakthrough cases")%>%
+    kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F)%>%
+    column_spec(3, width = "10em")%>%
+    column_spec(4, width = "5em", background = "#B6D2E7")%>%
+    column_spec(5, width = "10em")%>%
+    column_spec(6, width = "5em", background = "#B6D2E7")
+
+#(* hospitalization may not be up to date, as it is from redcap)
+```
+
+```{r}
+temp<-dtaredcaprecent%>%
+    select(date_of_collection, starts_with(c("vax", "vac", "days")))%>%
+    filter(vaxstatus!="3.Full")
+```
+
+
+#### 2.4. Hospitaization: breakthrough vs. regular cases 
+NEDSS is unique in redcap data.    
+NEDSS is NOT unique in hospitalization data...   
+
+Work in progress. YJ to double check ID variables in COVIDlink reports...
+
+```{r dtaredcaphosp}
+    
+str(dtahosp$admission)
+str(dtaredcap$date_of_collection)
+
+str(dtahosp$nedssid)
+str(dtaredcap$nedss)
+
+dtahosptomerge<-dtahosp%>%
+    mutate(
+        specimencolldate=as.Date(specimencolldate),
+        
+        immunet_dose_1_date=as.Date(immunet_dose_1_date),
+        immunet_dose_2_date=as.Date(immunet_dose_2_date),
+        
+        vaxbeforetest=immunet_dose_1_date<specimencolldate,  
+        #everyone in this dataset has received at least one dose. really??  
+        
+        vax1=is.na(immunet_dose_1_date)==FALSE,  
+        vax2=is.na(immunet_dose_2_date)==FALSE,  
+        vaxnum=vax1+vax2,
+        
+        vaxdate = as.Date(do.call(pmax, c(select(., starts_with('immunet_dose')), na.rm = TRUE))), 
+        #vaxdate=ifelse(vaxbeforetest==FALSE, NA, vaxdate), 
+        
+        dayssincevax=NA, 
+        dayssincevax=(specimencolldate - vaxdate),
+
+        breakthrough=0,
+        breakthrough=ifelse(vaxbeforetest==TRUE & 
+            immunet_manufacturer_1=="JSN" &vaxnum==1 & dayssincevax>=14, 1, breakthrough),
+        breakthrough=ifelse(vaxbeforetest==TRUE & 
+            immunet_manufacturer_1!="JSN" &vaxnum==2 & dayssincevax>=14, 1, breakthrough),
+            
+        vaxstatus="?",  
+        vaxstatus=ifelse(vaxbeforetest==FALSE , "1.None", vaxstatus), 
+        vaxstatus=ifelse(vaxbeforetest==TRUE, "2.Partial", vaxstatus), 
+        vaxstatus=ifelse(breakthrough==1, "3.Full", vaxstatus),
+        
+        hosp="Yes", 
+        nedssid=as.numeric(nedssid)
+    )%>%
+    rename(nedss=nedssid)%>%
+    select(nedss, admission, hosp, vaxstatus)
+
+dim(dtaredcap)
+dim(dtahosptomerge)
+
+str(dtaredcap$nedss)
+str(dtahosptomerge$nedss)
+
+dtaredcaphosp<-full_join(dtaredcap, dtahosptomerge, by=c("nedss"))
+dim(dtaredcaphosp)
+
+dtaredcaphosp<-dtaredcaphosp%>%
+    mutate(
+        admission=as.Date(admission),
+        date_of_collection=as.Date(date_of_collection),
+        dayssincetest=admission-date_of_collection
+        )
+
+table(dtaredcaphosp$dayssincetest)
+
+dtaredcaphosp<-dtaredcaphosp%>%
+    filter(admission>=date_of_collection)
+
+dim(dtaredcaphosp)
+```
+
+### 3. Trends in variants of concern/interest among ALL CASES (not just breakthrough cases) in the past 6 months
+
+The list of VOC and VOI updated as of __September 17, 2021__.  
+
+__Variants of concern__: https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html#Concern       
+* B.1.1.7 (Alpha),     
+* B.1.351 (Beta),    
+* B.1.617.2 + AY... (Delta),     
+* P.1 (Gamma)   
+
+__Variants of interest__: https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html#Interest     
+* B.1.525 (Eta),     
+* B.1.526 (Iota),     
+* B.1.617.1 (Kappa), and       
+* B.1.617.3 (No name - 20A)     
+
+See Annex regarding further information on variant testing in Maryland. 
+
+<span style="color: red;">__NOTE: there is a substantial delay in getting the variants data__, potentially up to a month</span> 
+```{r dtavoc}
+#NEW column names as of Sep 20, Argh...    
+
+dtavoc<-dtavoc%>%
+    mutate(
+        obs=1,
+        date	=as.Date(Specimen.Collection.Date, "%m/%d/%Y"), 
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14)
+    )%>%
+    filter(is.na(date)==FALSE)%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+
+    #rename variants
+    mutate(
+        Variant.Lineage=as.character(Variant.Lineage), 
+        Variant.Lineage = replace(Variant.Lineage, Variant.Lineage=="", " Not tested"),
+        
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.1.7", Variant.Lineage)==TRUE, "VOC: Alpha (UK)"),
+    
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.351", Variant.Lineage)==TRUE, "VOC: Beta (South Africa)"),
+        
+        Variant.Lineage = replace(Variant.Lineage, grepl("P.1", Variant.Lineage)==TRUE, "VOC: Gamma (Brazil)"),
+        
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.617.2", Variant.Lineage)==TRUE, "VOC: Delta (India)"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("AY.1", Variant.Lineage)==TRUE, "VOC: Delta (India)"), 
+        Variant.Lineage = replace(Variant.Lineage, grepl("AY.2", Variant.Lineage)==TRUE, "VOC: Delta (India)"), 
+        
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.427", Variant.Lineage)==TRUE, "VOI: Epsilon (US/CA)"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.429", Variant.Lineage)==TRUE, "VOI: Epsilon (US/CA)"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.525", Variant.Lineage)==TRUE, "VOI: Eta"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.526", Variant.Lineage)==TRUE, "VOI: Iota (US/NY)"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.617.1", Variant.Lineage)==TRUE, "VOI: Kappa (India)"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.617.3", Variant.Lineage)==TRUE, "VOI: 20A (India)"),
+        Variant.Lineage = replace(Variant.Lineage, grepl("P2", Variant.Lineage)==TRUE, "V other: Zeta (Brazil)"),
+
+        Variant.Lineage = replace(Variant.Lineage, 
+                                    grepl("VOC", Variant.Lineage)==FALSE &
+                                    grepl("VOI", Variant.Lineage)==FALSE &
+                                    grepl("other", Variant.Lineage)==FALSE &
+                                    grepl("Not tested", Variant.Lineage)==FALSE, 
+                                    "Wild type")
+    )
+
+#table(dtavoc$Variant.Lineage)
+#table(dtavoc$Specimen.Lab.Collection.Date)
+#table(dtavoc$Specimen.Collection.Date)
+```    
+
+```{r dtavocweekly}
+
+dtavocweekly<-dtavoc%>%
+    #filter(County=="Harford")%>%
+    #only in the last 16 weeks
+    filter(retroweek<=24)%>% #6 months 
+    group_by(retroweekdate, Variant.Lineage)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+dim(dtavoc)
+dim(dtavocweekly)
+
+
+```
+
+```{r plot_trend_weekly_voc, out.width="1000px", results="asis"}
+dtafig<-dtavocweekly
+
+dtafig%>% 
+    plot_ly(x = ~retroweekdate,
+            y = ~obs, type = "bar",
+             color= ~Variant.Lineage, 
+             colors = brewer.pal(length(unique(dtafig$Variant.Lineage)),
+                                "Spectral")
+             ) %>% 
+    layout(
+        title = c("Weekly distribution by variant lineage: Maryland (number of cases)"),
+        yaxis = list(title = "Number of variant cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_weekly_voc_pct, out.width="1000px", results="asis"}
+dtafig%>% 
+    group_by(retroweekdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retroweekdate,
+            y = ~pct, type = "bar",
+             color= ~Variant.Lineage, 
+             colors = brewer.pal(length(unique(dtafig$Variant.Lineage)),
+                                "Spectral")
+             ) %>% 
+    layout(
+        title = c("Weekly distribution by variant lineage: Maryland (%)"),
+        yaxis = list(title = "percent of variant cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
+### 4. Among Harford county residents who were hospitalized, vaccination status at the time of specimen collection - weekly trends
+
+Below figures are weekly trends for Harford county, based on MDH's "__Weekly COVID Hospitalizations Line List__", received on `r date_dtahosp`.
+
+```{r dtahosp}
+
+names(dtahosp)<-tolower(names(dtahosp))
+#colnames(dtahosp)
+    
+dtahosp<-dtahosp%>%
+    mutate(
+        specimencolldate=as.Date(specimencolldate),
+        dob=as.Date(dob),
+        
+        #immunet_dose_1_date=ifelse(immunet_dose_1_date>=as.Date(Sys.time(	), format='%Y-%d-%b'), NA, immunet_dose_1_date),
+        #immunet_dose_1_date=ifelse(immunet_dose_1_date>=as.Date("3021-01-01"), NA, immunet_dose_1_date), 
+        immunet_dose_1_date=as.Date(immunet_dose_1_date),
+        immunet_dose_2_date=as.Date(immunet_dose_2_date),
+        
+        vaxbeforetest=immunet_dose_1_date<specimencolldate,  
+        #everyone in this dataset has received at least one dose. really??  
+        
+        vax1=is.na(immunet_dose_1_date)==FALSE,  
+        vax2=is.na(immunet_dose_2_date)==FALSE,  
+        vaxnum=vax1+vax2,
+        vaxever=is.na(vax1)==FALSE,
+          
+        vaxdate = as.Date(do.call(pmax, c(select(., starts_with('immunet_dose')), na.rm = TRUE))), 
+        #vaxdate=ifelse(vaxbeforetest==FALSE, NA, vaxdate), 
+        
+        dayssincevax=NA, 
+        dayssincevax=as.numeric(specimencolldate - vaxdate),
+
+        breakthrough=0,
+        breakthrough=ifelse(vaxbeforetest==TRUE & 
+            immunet_manufacturer_1=="JSN" &vaxnum==1 & dayssincevax>=14, 1, breakthrough),
+        breakthrough=ifelse(vaxbeforetest==TRUE & 
+            immunet_manufacturer_1!="JSN" &vaxnum==2 & dayssincevax>=14, 1, breakthrough),
+            
+        vaxstatus="?",  
+        vaxstatus=ifelse(vaxbeforetest==FALSE , "1.None", vaxstatus), 
+        vaxstatus=ifelse(vaxbeforetest==TRUE, "2.Partial", vaxstatus), 
+        vaxstatus=ifelse(breakthrough==1, "3.Full", vaxstatus),
+        
+        age = floor((specimencolldate - dob)/365.25),
+        
+        agefloor=10*floor(age/10),
+        agefloor=ifelse(agefloor>=90, 80, agefloor),
+        ageceiling= agefloor+9,
+        agegroup=paste0(agefloor,"-",ageceiling),
+        
+        age60="0-59",
+        age60=ifelse(age>=60, "60+", age60),
+        
+        agevaxstatus=vaxstatus,  
+        agevaxstatus=ifelse(vaxstatus=="1.None" & age>=60,"1.1 None, >=60",
+                     ifelse(vaxstatus=="1.None" & age<60,"1.2 None, <60",
+                     ifelse(vaxstatus=="3.Full" & age>=60,"3.1 Full, >=60",
+                     ifelse(vaxstatus=="3.Full" & age<60,"3.2 Full, <60",
+                            agevaxstatus)))), 
+        
+        obs=1, 
+        obs_vax=NA, 
+        obs_breakthrough=NA, 
+        obs_vax=ifelse( vaxbeforetest==TRUE, 1, obs_vax),
+        obs_breakthrough=ifelse( breakthrough==1, 1, obs_breakthrough), 
+
+        date = specimencolldate
+    )
+
+table(dtahosp$vaxbeforetest, dtahosp$vaxever)   
+table(dtahosp$vaxbeforetest, dtahosp$breakthrough)   
+table(dtahosp$vaxbeforetest, dtahosp$vaxstatus)
+
+summary(dtahosp$specimencolldate)
+summary(dtahosp$vaxdate)
+summary(dtahosp$dayssincevax)
+
+temp<-dtahosp%>%
+    filter(dayssincevax<= -1000)%>%
+    select(specimencolldate, immunet_dose_1_date, immunet_dose_2_date,
+           vaxdate, dayssincevax)
+
+#View(temp)	
+#A large num of cases that received vaccine on "3021-01-01", Why?? 
+```
+
+#### 4.1. Broken down only by vaccine status
+```{r dtahospweekly_vaxstatus}
+datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
+
+dtahospdaily<-dtahosp%>%
+    group_by(date, vaxstatus)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+dim(dtahospdaily)
+
+dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14)
+    )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+    
+    filter(is.na(vaxstatus)==FALSE)
+
+dtahospweekly<-dtahospdaily%>%
+    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    group_by(retroweekdate, vaxstatus)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+dim(dtahosp)
+dim(dtahospweekly)
+
+table(dtahosp$vaxstatus)
+table(dtahospdaily$vaxstatus)
+table(dtahospweekly$vaxstatus)
+    
+```
+
+```{r plot_trend_weekly_vaxstatus_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospweekly
+
+dtafig%>% 
+    plot_ly(x = ~retroweekdate,
+            y = ~obs, type = "bar",
+             color= ~vaxstatus, 
+             #colors = brewer.pal(length(unique(dtafig$vaxstatus)),"Spectral")
+            colors = c('#d62728','#ffffbf','#1f77b4')
+             ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "Number of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_weekly_vaxstatus_hosp_pct, results="asis", out.width="1000px"}
+dtafig%>% 
+    group_by(retroweekdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retroweekdate,
+            y = ~pct, type = "bar",
+            color= ~vaxstatus, 
+             #colors = brewer.pal(length(unique(dtafig$vaxstatus)), "Spectral")
+            colors = c('#d62728','#ffffbf','#1f77b4')
+            ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "percent of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
+#### 4.2. Broken down by vaccine status AND age group
+```{r dtahospweekly_agevaxstatus}
+datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
+
+dtahospdaily<-dtahosp%>%
+    group_by(date, agevaxstatus)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+dim(dtahospdaily)
+
+dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14)
+    )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+    
+    filter(is.na(agevaxstatus)==FALSE)
+
+dtahospweekly<-dtahospdaily%>%
+    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    group_by(retroweekdate, agevaxstatus)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+    
+```
+
+```{r plot_trend_weekly_agevaxstatus_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospweekly
+
+dtafig%>% 
+    plot_ly(x = ~retroweekdate,
+            y = ~obs, type = "bar",
+             color= ~agevaxstatus, 
+             colors = c('#d62728','#e57575','#ffffbf','#1f77b4', '#70A8D6')
+             ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "Number of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_weekly_agevaxstatus_hosp_pct, results="asis", out.width="1000px"}
+dtafig%>% 
+    group_by(retroweekdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retroweekdate,
+            y = ~pct, type = "bar",
+             color= ~agevaxstatus, 
+             colors = c('#d62728','#e57575','#ffffbf','#1f77b4', '#70A8D6')             ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "percent of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
+#### 4.3. Broken down only by age group
+```{r dtahospweekly_age60}
+datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
+
+dtahospdaily<-dtahosp%>%
+    group_by(date, age60)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+dim(dtahospdaily)
+
+dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14)
+    )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+    
+    filter(is.na(age60)==FALSE)
+
+dtahospweekly<-dtahospdaily%>%
+    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    group_by(retroweekdate, age60)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+    
+```
+
+```{r plot_trend_weekly_age60_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospweekly
+
+dtafig%>% 
+    plot_ly(x = ~retroweekdate,
+            y = ~obs, type = "bar",
+             color= ~age60, 
+             colors = brewer.pal(length(unique(dtafig$age60)),
+                                "Spectral")
+             ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "Number of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_weekly_age60_hosp_pct, results="asis", out.width="1000px"}
+dtafig%>% 
+    group_by(retroweekdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retroweekdate,
+            y = ~pct, type = "bar",
+             color= ~age60, 
+             colors = brewer.pal(length(unique(dtafig$age60)),
+                                "Spectral")            ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "percent of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
+#### 4.4. Broken down only by detailed age group
+```{r dtahospweekly_agegroup}
+datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
+
+dtahospdaily<-dtahosp%>%
+    group_by(date, agegroup)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+dim(dtahospdaily)
+
+dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retroweek =  floor((latest-date)/7)
+        #retroweek =  floor((latest-date)/14)
+    )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+    
+    filter(is.na(agegroup)==FALSE)
+
+dtahospweekly<-dtahospdaily%>%
+    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    group_by(retroweekdate, agegroup)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+    
+```
+
+```{r plot_trend_weekly_agegroup_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospweekly
+
+dtafig%>% 
+    plot_ly(x = ~retroweekdate,
+            y = ~obs, type = "bar",
+             color= ~agegroup, 
+             colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")
+             ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "Number of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_weekly_agegroup_hosp_pct, results="asis", out.width="1000px"}
+dtafig%>% 
+    group_by(retroweekdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retroweekdate,
+            y = ~pct, type = "bar",
+             color= ~agegroup, 
+             colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")            ) %>% 
+    layout(
+        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "percent of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
+###Annex
+__Data source 1.__ Breakthrough cases: Reports, __Cases w Vax Breakthrough (>=14 days) 4__ and __Cases w Vax Breakthrough (>=14 days) 3__, from COVID Link (http://mdcovid.lightning.force.com/). 
+
+Breakthrough cases are identified, based on the following - according to Alex Goode at MDH:  
+"1. COVID-19 case is matched to the CRISP master patient index based on Firstname, Lastname, DOB, Gender, Address - pulls in something called EID  - Enterprise Identifier    
+2. Immunet data is separately matched to the CRISP master patient index on Firstname, Lastname, DOB, Gender, Address    
+3. Immunet Data is added to the contact object where contact.EID = immunet.EID   
+4. _We provide the Immunet Names and DOB to ensure the match is accurate, since there is a very small chance of mismatching, although this match is usually > 99% reliable and catches variations in name and address entry, and accommodates simple transpositions of dates of birth, etc in one of the sources - still allowing the records to match_."    
+
+__Data source 2.__ New COVID-19 cases: from MDH (https://opendata.arcgis.com/datasets/0573e90adab5434f97b082590c503bc1_0.geojson) 
+
+__Data source 3.__ Number of people fully vaccinated: Immunet data from MDH.    
+
+__Data source 5.__ COVID-19 hospitalization data; updated data from MDH received on Fridays.        
+
+__Data source 5.__ VOC/VOI cases: A "report", __Cases with VoC__, from COVID Link (http://mdcovid.lightning.force.com/).    
+
+Also, see below for further information about testing for variants (source: Email communication with Monique Duwell, MDH, Chief, Center for Infectious Disease Surveillance and Outbreak Response; July 29, 2021) 
+
+"1. Can you tell us roughly what percent of COVID-19 cases are tested for variants in Maryland? Currently, and, if different, in the past as well?    
+_Based on the sequencing results reported to our surveillance program, about 15% of COVID cases are being sequenced. This is likely an under-estimate of the true % of sequencing being performed statewide._       
+
+2. Is the testing done randomly or more focused among certain patients (e.g., by age, by vaccination status, by severity/admission status)?     
+_We focus on sequencing patients who are hospitalized, deceased, fully vaccinated, live in high-risk settings, and who have traveled. However, we are also obtaining sequencing results on many patients who do not fall into these categories, since some labs sequence all patients, regardless of risk factors._      
+
+3.Do you know the general turnaround time for the variant test result: from specimen collection to data entry in the COVID link?     
+_It varies greatly, largely due to the variability in amount of time it takes for labs to complete sequencing, and the amount of time it takes for them to upload the data to GISAID or report to us directly. I would say that about 3-4 weeks is the average turnaround time._"
+
