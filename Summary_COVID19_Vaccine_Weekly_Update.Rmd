@@ -43,11 +43,17 @@ suppressWarnings(suppressMessages(library(RColorBrewer)))
 # COVID-19 vaccine coverage among Harford County residents in Maryland - summary
 
 (Page updated at `r time`)   
-Data source: *Immunet* from Maryland Department of Health, as of `r date`. For further data analysis, methods, and detailed note on data sources, [please see this](https://rpubs.com/YJ_Choi/HCHD_covax).     
+Data source: *Immunet* from Maryland Department of Health, as of `r date`. For further data analysis, methods, and detailed note on data sources, [please see the full note here](https://rpubs.com/YJ_Choi/HCHD_covax).     
+
+<div class="alert alert-warning">
+NOTE: In this note,     
+1. "Weekly data" is not data for a calendar week. It refers to a seven-day period leading up to the date of latest update (e.g., last Thursday-Wednesday, if an update is on Thursday).      
+2. Age is age at the first vaccination.   
+</div>
 
 ```{r dta_import}
 #Immunization level data
-dtaimmunetNEW<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 11012021.xlsx")
+dtaimmunetNEW<-read_excel("~/Dropbox/0 iSquared/iSquared_Harfod/dta_immunet/COVID-19 Administrations - Harford 12032021.xlsx")
 #dtaimmunet<-read_excel("~/Documents/dta_immunet/COVID-19 Administrations - Harford 03232021.xlsx")
 # Starting from May 3, the data has only vaccination on March 1 or later!!!
 
@@ -281,8 +287,8 @@ dtaeligible<-dta%>%
     mutate(
         #temporary var needed to create a person-level eligibility 
         eligible=
-            (complete==1 & firstvaccine==1 & dosenumber==2 & intervalsince>=180 & age>=65) | 
-            (complete==1 & firstvaccine==2 & dosenumber==2 & intervalsince>=180 & age>=65) | 
+            (complete==1 & firstvaccine==1 & dosenumber==2 & intervalsince>=180 & age>=18) | 
+            (complete==1 & firstvaccine==2 & dosenumber==2 & intervalsince>=180) | 
             (complete==1 & firstvaccine==3 & dosenumber==1 & intervalsince>=60) 
     )%>%    
     
@@ -341,9 +347,10 @@ dtabooster<-dta%>%
     
     mutate(    
         #temporary var needed to create a person-level eligibility 
+        #Age limit changed to 18 on Nov 29
         eligibleforbooster=
-            (complete==1 & firstvaccine==1 & dosenumber==2 & intervalsince>=180 & age>=65) | 
-            (complete==1 & firstvaccine==2 & dosenumber==2 & intervalsince>=180 & age>=65) | 
+            (complete==1 & firstvaccine==1 & dosenumber==2 & intervalsince>=180 & age>=18) | 
+            (complete==1 & firstvaccine==2 & dosenumber==2 & intervalsince>=180 & age>=18) | 
             (complete==1 & firstvaccine==3 & dosenumber==1 & intervalsince>=60) 
     )%>%
     
@@ -363,13 +370,14 @@ dtabooster<-dta%>%
         booster_JSN  = firstvaccine==3 & dosenumber>=2 & interval>=60,         
         booster      = booster_mRNA==TRUE | booster_JSN==TRUE, 
 
-        booster_eligiblePFR = firstvaccine==1 & dosenumber>=3 & interval>=180 & age>=65, 
-        booster_eligibleMOD = firstvaccine==2 & dosenumber>=3 & interval>=180 & age>=65, 
+        booster_eligiblePFR = firstvaccine==1 & dosenumber>=3 & interval>=180 & age>=18, 
+        #booster_eligibleMOD = firstvaccine==2 & dosenumber>=3 & interval>=180 & age>=18, 
+        booster_eligibleMOD = firstvaccine==2 & dosenumber>=3 & interval>=180,
         booster_eligibleJSN = firstvaccine==3 & dosenumber>=2 & interval>=60, 
         booster_eligible = booster_eligiblePFR==1 | booster_eligibleMOD==1 | booster_eligibleJSN==1,
         
-        booster_ineligiblePFR = firstvaccine==1 & dosenumber>=3 & interval>=180 & age<65, 
-        booster_ineligibleMOD = firstvaccine==2 & dosenumber>=3 & interval>=180 & age<65, 
+        booster_ineligiblePFR = firstvaccine==1 & dosenumber>=3 & interval>=180 & age<18, 
+        #booster_ineligibleMOD = firstvaccine==2 & dosenumber>=3 & interval>=180 & age<18, 
         
         timebooster="",
         timebooster=ifelse(interval>=60 & interval<90, "2 months",
@@ -442,6 +450,10 @@ nboosterlastweek<-temp$booster
 temp<-dtaboosterweekly%>%filter(retroweek==1)
 nboosterpreviousweek<-temp$booster
 
+pctdecrease<- round(100*(nboosterlastweek - nboosterpreviousweek) /nboosterpreviousweek, 1)
+
+pctdecrease
+
 ```
 
 ```{r}
@@ -477,9 +489,9 @@ dtaboosterdaily<-dtabooster%>%
                 grepl("UM St. Joseph Medical Center", ADMINISTERING_ORG_NAME)==TRUE , 
                 1),
         
-        place="3.Non pharmacy/hospital",
+        place="3.Other: Neither pharmacy nor hospital",
         place=ifelse(pharmacy==1, "1.Pharmacy", 
-                     ifelse(hospital==1, "2.Hospital-Other",
+                     ifelse(hospital==1, "2.Hospital",
                             place))
     )%>%
     group_by(place, vdate)%>%
@@ -530,17 +542,10 @@ pct_hospital
 <div class="alert alert-info">
 <strong>SUMMARY</strong>    
 
-1. A total of `r nbooster` "booster" shots were given. 
-2. In the past 7 days, `r nboosterlastweek` booster shots were provided, compared to `r nboosterpreviousweek` in the previous 7-days.   
-3. Pharmacies are main source for booster shots. __In the last two weeks__, there were `r ntotal` booster shots were provided, `r pct_pharmacy`% of them were given at pharmacies and `r pct_hospital`% were given at hospitals.  
-4. Simply based on the age, type and date of the initial shot, a total of `r nbooster_eligible` shots were given to people who were eligible to receive a booster. **This is `r pctboostereligible` % of the total `r nboostereligible` eligible people for booster to date**. 
-5. Booster rate varies by background characteristics:        
+1. __In the past 7 days, `r nboosterlastweek` booster shots were provided: a change by `r pctdecrease`%__, compared to `r nboosterpreviousweek` in the previous 7-days. A total of `r nbooster` "booster" shots were given to date.       
+2. __In the last four weeks, the number of booster shots for 60+ has declined continuously__, while the number for <60 has remained stable.    
+3. Pharmacies are main source for booster shots. In the past 14 days, `r ntotal` booster shots were provided: `r pct_pharmacy`% of them were given at pharmacies and `r pct_hospital`% were given at hospitals.     
 </div>
-
-In this note, booster shots are:  
-- 3rd or higher order shot for those who received **PFR/MOD** vaccines for their first shot AND the interval is **120 days or longer** from the previous shot.     
-- 2nd or higher order shot for those who received **JSN** vaccines for their first shot AND the interval is **60 days or longer** from the previous shot.     
-See [Annex 2 in the detailed note]((https://rpubs.com/YJ_Choi/HCHD_covax) for how booster shots are defined.     
 
 ```{r plot_boostertrend_eligible, results='asis'}
 dtaboosterdaily<-dtabooster%>%
@@ -548,7 +553,7 @@ dtaboosterdaily<-dtabooster%>%
     group_by(vdate)%>%
     summarize_at(vars(c("booster", 
                         "booster_eligiblePFR", "booster_eligibleMOD", "booster_eligibleJSN" ,
-                        "booster_ineligiblePFR", "booster_ineligibleMOD", )), 
+                        "booster_ineligiblePFR" )), 
                       funs(sum(., na.rm = TRUE)))%>%
     ungroup()
 
@@ -568,7 +573,7 @@ dtafig<-full_join(datesequence, dtaboosterdaily, by="vdate")%>%
     group_by(retroweekdate)%>%
     summarize_at(vars(c("booster", 
                         "booster_eligiblePFR", "booster_eligibleMOD", "booster_eligibleJSN",
-                        "booster_ineligiblePFR", "booster_ineligibleMOD" )), 
+                        "booster_ineligiblePFR" )), 
                  funs(sum(., na.rm = TRUE)))%>%
     ungroup()
 
@@ -576,21 +581,21 @@ dtafig%>%
     filter(retroweekdate >= as.Date("2021-04-01"))%>%
     plot_ly(
         x=~retroweekdate,
-        y=~booster_eligiblePFR, name="65+ & PFR base shot", 
+        y=~booster_eligiblePFR, name="18+ & PFR base shot", 
         type = 'bar',
         marker=list(color = c("#1F77B4"), size=5))%>%
     add_bars(
-        y=~booster_eligibleMOD, name="65+ & MOD base shot",
+        y=~booster_eligibleMOD, name="MOD base shot",
         marker=list(color = c("#6AA84F"), size=5))%>%
     add_bars(
-        y=~booster_eligibleJSN, name="65+ & JAN base shot",
+        y=~booster_eligibleJSN, name="JAN base shot",
         marker=list(color = c("#D98DB9"), size=5))%>%
     add_bars(
-        y=~booster_ineligiblePFR, name="<65 & PFR base shot",
+        y=~booster_ineligiblePFR, name="<18 & PFR base shot",
         marker=list(color = c("#A4C7E1"), size=5))%>%
-    add_bars(
-        y=~booster_ineligibleMOD, name="<65 & MOD base shot",
-        marker=list(color = c("#C2DBB7"), size=5))%>%
+    #add_bars(
+    #    y=~booster_ineligibleMOD, name="<18 & MOD base shot",
+    #    marker=list(color = c("#C2DBB7"), size=5))%>%
     layout(
         barmode = 'stack',
         title = c("Weekly number of people who received booster"),
@@ -612,28 +617,17 @@ dtafig%>%
 
 ```
 
-```{r dta_boostertrend_byplace_same}
+```{r plot_boostertrend_byage, results='asis'}
 dtaboosterdaily<-dtabooster%>%
     filter(is.na(vdate)==FALSE)%>%
-    filter(is.na(ADMINISTERING_ORG_NAME)==FALSE)%>%
+    filter(is.na(agegroup)==FALSE)%>%
+    filter(agegroup!="NA-NA")%>%
     mutate(
-        hospital=0, 
-        hospital=replace(hospital, 
-                grepl("Hospital", ADMINISTERING_ORG_NAME)==TRUE |
-                grepl("JH Bayview Medical Center", ADMINISTERING_ORG_NAME)==TRUE |
-                grepl("University of Maryland Medical Center (UMMC)", ADMINISTERING_ORG_NAME)==TRUE |
-                grepl("Upper Chesapeake Medical Center", ADMINISTERING_ORG_NAME)==TRUE |
-                grepl("Mercy Medical Center", ADMINISTERING_ORG_NAME)==TRUE |
-                grepl("UM St. Joseph Medical Center", ADMINISTERING_ORG_NAME)==TRUE , 
-                1),
-        
-        place="3.Non pharmacy/hospital",
-        place=ifelse(pharmacy==1, "1.Pharmacy", 
-                     ifelse(hospital==1, "2.Hospital-Other",
-                            place))
+        agegroup=ifelse(agegroup=="10-19", "<20", agegroup),
+        agegroup=ifelse(agegroup=="0-9", "<20", agegroup)
     )%>%
-    group_by(place, vdate)%>%
-    summarize_at(vars(c("booster", "booster_mRNA", "booster_JSN", "booster_eligible")), 
+    group_by(agegroup, vdate)%>%
+    summarize_at(vars(c("booster")), 
                       funs(sum(., na.rm = TRUE)))%>%
     ungroup()
 
@@ -649,23 +643,21 @@ dtafig<-full_join(datesequence, dtaboosterdaily, by="vdate")%>%
     group_by(retroweek)%>%
     mutate(retroweekdate= max(vdate, na.rm = TRUE))%>%
     ungroup()%>%
-
-    group_by(place, retroweekdate)%>%
-    summarize_at(vars(c("booster", "booster_eligible")),
+    
+    group_by(agegroup, retroweekdate)%>%
+    summarize_at(vars(c("booster")),
                  funs(sum(., na.rm = TRUE)))%>%
     ungroup()
-```
 
-```{r plot_boostertrend_byplace, results='asis'}
 dtafig%>%
     filter(retroweekdate >= as.Date("2021-04-01"))%>%
     plot_ly(
         x=~retroweekdate,
         y=~booster, 
         type = 'bar',
-        color = ~place, 
-        colors = brewer.pal(length(unique(dtafig$place)),
-                            "Accent")
+        color = ~agegroup,
+        colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")
         )%>%
     layout(
         barmode = 'stack',
@@ -686,12 +678,19 @@ dtafig%>%
         )
 ```
 
-### 1.2. Among eligible people, who have got their booster?   
+<div class="alert alert-warning">
+In this note, booster shots are:  
+- 3rd or higher order shot for those who received **PFR/MOD** vaccines for their first shot AND the interval is **120 days or longer** from the previous shot.     
+- 2nd or higher order shot for those who received **JSN** vaccines for their first shot AND the interval is **60 days or longer** from the previous shot.     
+See [Annex 2 in the full note](https://rpubs.com/YJ_Choi/HCHD_covax) for how booster shots are defined.     
+</div>
+
+### 1.2. Among people who *should*, who have got their booster?   
 <div class="alert alert-info">
 <strong>SUMMARY</strong>    
 
-1. _Simply based on the age, type and date of the initial shot_, a total of `r nbooster_eligible` shots were given to people who were eligible to receive a booster. **This is `r pctboostereligible` % of the total `r nboostereligible` eligible people for booster to date**. 
-2. Booster rate varies by background characteristics. The breakdown by _both manufacturer and race_ suggests that booster rates are lower among Hispanic and Black groups.            
+1. Simply based on the age, type and date of the initial shot, a total of `r nbooster_eligible` shots were given to people "who should get booster shots", according to [CDC's guidelines](https://www.cdc.gov/coronavirus/2019-ncov/vaccines/booster-shot.html). **This is `r pctboostereligible` % of the total `r nboostereligible` people who should get booster to date**.     
+2. Booster rates vary by age, race, and brand/type of the first dose. [Further breakdown by _both manufacturer and race_](https://rpubs.com/YJ_Choi/HCHD_covax) shows that booster rates are lower among Hispanic and Black eligible groups compared to other groups, even when they have received the same brand/type of the first dose.              
 </div>
 
 ```{r dtaeligible2}
@@ -793,8 +792,10 @@ temp4obs<-dtaeligible2%>%
     group_by(group, grouplabel)%>%
     summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))
 
-temppct<-rbind(temp1pct, temp2pct, temp3pct, temp4pct)
-tempobs<-rbind(temp1obs, temp2obs, temp3obs, temp4obs)
+temppct<-rbind(temp1pct, temp2pct, temp4pct)
+tempobs<-rbind(temp1obs, temp2obs, temp4obs)
+#temppct<-rbind(temp1pct, temp2pct, temp3pct, temp4pct)
+#tempobs<-rbind(temp1obs, temp2obs, temp3obs, temp4obs)
 
 dtafig<-left_join(temppct, tempobs, by=c("group", "grouplabel"))%>%
     mutate(pct=round(anybooster*100, 0))%>%
@@ -808,20 +809,20 @@ dtafig<-left_join(temppct, tempobs, by=c("group", "grouplabel"))%>%
     )
 
 names(dtafig)<-c("Group", 
-                     "Group.label",
-                     "Number of eligible people for booster", 
-                     "Percent of eligible people who received booster"
+                     " ",
+                     "Number of eligible* (*should get booster)", 
+                     "Percent of eligible peopole who received booster"
                      ) 
     
 ```
 
 ```{r table_breakthrough_recent, results='asis'}
-kable(dtafig, caption = "Percent of eligible people who received booster: by background")%>%
+kable(dtafig, caption = "Percent of eligible* people who received booster: by background")%>%
     kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F)%>%
     column_spec(1, width = "15em")%>%
-    column_spec(2, width = "10em", background = "#D2E7B6")%>%
+    column_spec(2, width = "10em", background = "#EEEEEE")%>%
     column_spec(3, width = "10em")%>%
-    column_spec(4, width = "10em", background = "#D2E7B6")
+    column_spec(4, width = "10em", background = "#EEEEEE")
     
 ```
 
@@ -830,7 +831,7 @@ kable(dtafig, caption = "Percent of eligible people who received booster: by bac
 <div class="alert alert-info">
 <strong>SUMMARY</strong>    
 
-1. While booster shots have got attention recently, the number of people who get their initial doses (2 for PFR/MOD, 1 for JSN) has remained steady.   
+1. While booster shots have got attention recently, the number of people who get their initial doses (2 for PFR/MOD, 1 for JSN) has remained steady - though relatively low.   
 </div>
 
 ```{r trend_byStatus_weekly_case}
@@ -927,72 +928,115 @@ dtacaseweeklytrend%>%
         )
 ```
 
-## 3. How about vaccination under 18 years of age?   
-<div class="alert alert-info">
-<strong>SUMMARY</strong>    
+## 3. How about vaccination among children?     
 
-1. Vaccination among 12-15 has remained lowest across all age groups. It peaked immediately after the authorization but dropped sharply once summer started.       
-2. Among 5-11,...       
-</div>
-
-### 3.1. What age groups are coming for their first shot?   
-```{r trend_weekly_people_age}
-dtafig<-dta%>%
+```{r trend_byStatus_weekly_people_age}
+dtafirstweekly<-dta%>%
     filter(dosenumber==1)%>%
     filter(is.na(vdate)==FALSE)%>%
+    #filter(age<40)%>%
+    filter(age<20)%>%
     mutate(
-        latest=max(vdate, na.rm = TRUE),
+        #latest=max(vdate, na.rm = TRUE),
+        latest=date-1,
         retroweek =  floor((latest-vdate)/7)
         )%>%
     group_by(retroweek)%>%
-    mutate(retroweekdate= as.Date(max(vdate, na.rm = TRUE)))%>%
+    mutate(retroweekdate= max(vdate, na.rm = TRUE))%>%
     ungroup()%>%
-
+    mutate(obs=1)%>%
     mutate(
-        group=10*floor(age/10),
-        group=ifelse(group>=90, 80, group),
-        obs=1
-        )%>%
-    filter(group>=10)%>%
-    select(retroweekdate, group, obs)%>%
-    group_by(retroweekdate, group)%>%
-    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
-
-    group_by(retroweekdate)%>%
-    mutate(total=sum(obs))%>%
-    ungroup()%>%
-    mutate(pct=round(100*(obs/total), 1))
-
-```
-
-```{r plot_trend_weekly_people_age, results="asis"}
-dtafig%>%
-    plot_ly(x = ~retroweekdate,
-            y = ~obs, type = "bar",
-             color= ~group,
-             colors = brewer.pal(length(unique(dtafig$group)),
-                                "Spectral")
-             ) %>%
-    layout(
-        title = c("Weekly vaccination distribution by 10-year age-group among people getting first vaccine"),
-        yaxis = list(title = "Number of vaccinations",
-                     titlefont=list(size=12)),
-        xaxis = list(title = "",
-                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
-        legend=list(orientation="v",
-                    xanchor = "left", yanchor = "center",
-                    x = 0.05, y = 0.9,
-                    font=list(size=8)),         
-        barmode = 'stack'
+        agegroup="",
+        agegroup=ifelse(age>=20 & age<=39, "20-39",
+                    ifelse(age>=16 & age<=19, "16-19",
+                       ifelse(age>=12 & age<=15, "12-15", 
+                              ifelse(age>=5 & age<=11, "5-11", agegroup))))
         )
 
+    temp1<-dtafirstweekly%>%
+        group_by(agegroup, retroweekdate)%>%
+        summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>% #weekly number of people getting first dose
+        ungroup()%>%
+        group_by(agegroup)%>%
+        mutate(cum_first = cumsum(obs))%>% #CUMULATIVE weekly number of people getting first dose
+        ungroup()%>%
+        rename(obsweeklyfirst=obs)
+
+dtacompleteweekly<-dta%>%
+    filter(complete==1)%>%
+    filter((MANUFACTURER!="JSN" & dosenumber==2) | (MANUFACTURER=="JSN" & dosenumber==1))%>%
+    filter(is.na(vdate)==FALSE)%>%
+    filter(age<20)%>%
+    mutate(
+        #latest=max(vdate, na.rm = TRUE),
+        latest=date-1,
+        retroweek =  floor((latest-vdate)/7)
+        )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(vdate, na.rm = TRUE))%>%
+    ungroup()%>%
+    mutate(obs=1)%>%
+    mutate(
+        agegroup="",
+        agegroup=ifelse(age>=20 & age<=39, "20-39",
+                    ifelse(age>=16 & age<=19, "16-19",
+                       ifelse(age>=12 & age<=15, "12-15", 
+                              ifelse(age>=5 & age<=11, "5-11", agegroup))))
+        )
+
+    temp2<-dtacompleteweekly%>%
+        group_by(agegroup, retroweekdate)%>%
+        summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>% #weekly number of people getting complete dose
+        ungroup()%>%
+        group_by(agegroup)%>%
+        mutate(cum_complete = cumsum(obs))%>% #CUMULATIVE weekly number of people getting complete dose
+        ungroup()%>%
+        select(-obs)
+
+dtaweeklytrendage<-left_join(temp1, temp2, by=c("agegroup", "retroweekdate"))%>%
+    mutate(
+        #denominator changed on 4/16/2021, after the weekly epi call
+        #See more here: https://rpubs.com/YJ_Choi/HCHD_coverage_denominator
+        #2019 estimates by USCB are from "County Population by Characteristics: 2010-2019," which shows population estimates by age, sex, and race for counties in the US for each year between 2010-2019. See here for the source and code book: https://www.census.gov/data/tables/time-series/demo/popest/2010s-counties-detail.html.
+        pop=NA,
+        pop = replace(pop, agegroup=="20-39", 	63761	),
+        pop = replace(pop, agegroup=="16-19", 	12665	),
+        pop = replace(pop, agegroup=="12-15", 	13412	), 
+        pop = replace(pop, agegroup=="5-11", 	21915	),
+
+        pct_cum_first = round(100*cum_first/pop, 1),  #CUm percent
+        pct_cum_complete = round(100*cum_complete/pop, 1) #CUm percent
+    )
+
+
+dtaweeklytrendage$agegroup <- factor(dtaweeklytrendage$agegroup, 
+                                  levels = c("5-11", "12-15", "16-19", "20-39"))
+
 ```
 
-### 3.2. In what type of facilities have they been vaccinated __for their first shot__ among those under 18 years?  
+```{r}
+temp<-dtaweeklytrendage%>%
+    filter(agegroup == "5-11")%>%
+    filter(retroweekdate == max(retroweekdate))
+    
+pct_cum_first_511<-round(temp$pct_cum_first, 2)
+pct_cum_first_511
+num_first_511<-temp$obsweeklyfirst
+num_first_511
+cum_first_511<-temp$cum_first
+cum_first_511
 
-```{r trend_weekly_people_where_type18}
+temp<-dtaweeklytrendage%>%
+    filter(agegroup == "12-15")%>%
+    filter(retroweekdate == max(retroweekdate))
+
+pct_cum_first_1215<-round(temp$pct_cum_first, 0)
+pct_cum_first_1215
+```
+
+```{r trend_weekly_people_where_type12}
 dtafirstweeklywhere<-dta%>%
-    filter(age<18)%>%
+    filter(age<12)%>%
     filter(dosenumber==1)%>%
     filter(is.na(vdate)==FALSE)%>%
     mutate(
@@ -1066,7 +1110,278 @@ dtafig<-left_join(dtafig, temp4, by="retroweekdate")
 dtafig<-left_join(dtafig, temp5, by="retroweekdate")
 ```
 
-```{r plot_trend_weekly_people_where_type18, results="asis"}
+```{r}
+temp<-dtafirstweeklywhere%>%
+    filter(retroweekdate == max(dtafirstweeklywhere$retroweekdate))%>%
+    mutate(
+        pct=round(100*obs/sum(obs), 0),
+        groupname="Other", 
+        groupname=
+            ifelse(group==0, "HCHD",
+                ifelse(group==1, "Massvax sites",
+                    ifelse(group==2, "Mobilevax sites",
+                        ifelse(group==3, "Pharmacies", 
+                            ifelse(group==4, "Pediatric Partner",
+                                ifelse(group==5, "Other pediatric practices",
+                                    group))))))
+        )
+
+temptemp<-temp%>%filter(pct==max(pct))
+    
+commonsource<-print(temptemp$groupname)
+commonsource        
+pctcommonsource<-temptemp$pct
+pctcommonsource
+
+temptemp<-temp%>%filter(group==4 | group==5)
+pctpeds<-sum(temptemp$pct)
+pctpeds
+```
+
+<div class="alert alert-info">
+<strong>SUMMARY</strong>     
+
+<strong>Among 12-15:</strong>     
+1. __It has remained lowest across all age groups in 12 or older__ (`r pct_cum_first_1215`% of the population received one or more doses).     
+2. __Pharmacies__ have been the main source of vaccination, partially because massvax sites were closed soon after they became eligible.    
+3. The weekly number peaked immediately after the authorization but dropped sharply after about a month, when summer started.     
+4. Interestingly, when 12-15 became eligible, we saw a spill over effect to older age groups.   
+
+<strong>Among 5-11:</strong>      
+1. In the last 7 days, `r num_first_511` children received their first dose. To date, a total of `r cum_first_511` first dose vaccinations have been provided to children 5-11 years of age.     
+2. To date, `r pct_cum_first_511`% of the population received one or more doses.     
+2. In the last 7 days, the most common source was `r commonsource`, vaccinating `r pctcommonsource`% of the young children. `r pctpeds`% were vaccinated at pediatric practices. 
+</div>
+
+### 3.1. What age groups are coming for their first shot?  
+```{r pop_age}
+dtapop<-read.csv("~/Dropbox/0 Project/COVID19_US/DataCensusBureau/cc-est2019-alldata-24.csv")
+#Link: https://www.census.gov/data/tables/time-series/demo/popest/2010s-counties-detail.html
+#Codebook: https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2019/cc-est2019-alldata.pdf
+
+names(dtapop)<- tolower(names(dtapop))   
+
+dtapop<-dtapop%>%
+    filter(year==12)%>% #12 = 7/1/2019 population estimate
+    filter(agegrp!=0)%>% #0 = Total
+    filter(ctyname=="Harford County")%>% #Harford county
+    select(agegrp, tot_pop)%>%
+    rename(pop=tot_pop)%>%
+    mutate_if(is.factor, as.character)%>%
+    mutate(
+        age5=(agegrp-1)*5,
+        age10floor=floor(age5/10)*10,
+        ageceiling= age10floor+9,
+        agegroup=paste0(age10floor,"-",ageceiling)
+    )%>%
+
+    group_by(agegroup)%>%
+    summarize_at(vars(pop), funs(sum(.)))%>%
+    ungroup()
+```
+
+```{r trend_weekly_age}
+dtafirstweeklytrend_age<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(
+        latest=max(vdate, na.rm = TRUE),
+        retroweek =  floor((latest-vdate)/7)
+        )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(vdate, na.rm = TRUE))%>%
+    ungroup()%>%
+    mutate(
+        agegroup=ifelse(agegroup=="10-19", "12-19", agegroup),
+        agegroup=ifelse(age<=11, "0-9", agegroup),
+        agegroup=ifelse(agegroup=="0-9", "5-11", agegroup),
+        obs=1
+        )%>%
+    #filter(agefloor>=10)%>% as of 11/2/2021
+    group_by(agegroup, retroweekdate)%>%
+    summarize_at(vars(obs), funs(sum(.)))%>%
+    ungroup()
+
+dtafig<-left_join(dtafirstweeklytrend_age,
+                                   dtapop,
+                                   by="agegroup")%>%
+    mutate(
+        pop = replace(pop, agegroup=="5-11", 	21915	),
+        pop = replace(pop, agegroup=="12-19", 	5782 + 6883 + 13412	),
+        pct = round(100*obs/pop, 3), 
+        
+        agegroup=ifelse(agegroup=="80-89", "80+", agegroup)
+    ) 
+        
+dtafig$agegroup <- factor(dtafig$agegroup, 
+                          levels = c("5-11", "12-19", "20-29", "30-39", "40-49", 
+                                     "50-59", "60-69", "70-79", "80+"))
+
+dim(dtafirstweeklytrend_age)
+dim(dtapop)
+dim(dtafig)
+table(dtafig$agegroup)
+```
+
+```{r plot_trend_weekly_age}
+dtafig%>%
+    plot_ly(x = ~retroweekdate,
+            y = ~pct, type = "scatter", mode="line",
+             color= ~agegroup,
+             colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")
+             ) %>%
+    layout(
+        title = c("Weekly % of population getting first vaccination by age group"),
+        yaxis = list(title = "Percent",
+                     titlefont=list(size=12),
+                     showgrid = FALSE),
+        xaxis = list(title = "",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7),
+                     showgrid = FALSE),
+        legend=list(orientation="v",
+                    xanchor = "left", yanchor = "center",
+                    x = 0.05, y = 0.95,
+                    font=list(size=8))   
+
+        )
+```
+
+```{r trend_weekly_people_age}
+dtafig<-dta%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(
+        latest=max(vdate, na.rm = TRUE),
+        retroweek =  floor((latest-vdate)/7)
+        )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= as.Date(max(vdate, na.rm = TRUE)))%>%
+    ungroup()%>%
+
+    mutate(
+        agegroup=ifelse(agegroup=="10-19", "12-19", agegroup),
+        agegroup=ifelse(age<=11, "0-9", agegroup),
+        agegroup=ifelse(agegroup=="0-9", "5-11", agegroup),
+        agegroup=ifelse(agegroup=="80-89", "80+", agegroup),
+        obs=1
+        )%>%
+                
+    select(retroweekdate, agegroup, obs)%>%
+    group_by(retroweekdate, agegroup)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+
+    group_by(retroweekdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*(obs/total), 1))
+
+dtafig$agegroup <- factor(dtafig$agegroup, 
+                          levels = c("5-11", "12-19", "20-29", "30-39", "40-49", 
+                                     "50-59", "60-69", "70-79", "80+"))
+```
+
+```{r plot_trend_weekly_people_age, results="asis"}
+dtafig%>%
+    plot_ly(x = ~retroweekdate,
+            y = ~obs, type = "bar",
+             color= ~agegroup,
+             colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")
+             ) %>%
+    layout(
+        title = c("Weekly number of first shots by age-group"),
+        yaxis = list(title = "Number of vaccinations",
+                     titlefont=list(size=12)),
+        xaxis = list(title = "",
+                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v",
+                    xanchor = "left", yanchor = "center",
+                    x = 0.05, y = 0.9,
+                    font=list(size=8)),         
+        barmode = 'stack'
+        )
+
+```
+
+### 3.2. Among those __under 16 years__, where do they get vaccinated?    
+```{r trend_weekly_people_where_type16}
+dtafirstweeklywhere<-dta%>%
+    filter(age<16)%>%
+    filter(dosenumber==1)%>%
+    filter(is.na(vdate)==FALSE)%>%
+    mutate(
+        latest=max(vdate, na.rm = TRUE),
+        retroweek =  floor((latest-vdate)/7)
+        )%>%
+    group_by(retroweek)%>%
+    mutate(retroweekdate= max(vdate, na.rm = TRUE))%>%
+    ungroup()%>%
+    mutate(
+        group=6,
+        group=ifelse(HCHD==1, 0,
+                ifelse(massvax==1, 1,
+                    ifelse(mobilevax==1, 2,
+                        ifelse(pharmacy==1, 3,
+                            ifelse(pedpartner==1, 4,
+                                ifelse(pedpartner==0 & ped==1, 5,
+                                    group)))))),
+        obs=1
+        )%>%
+    select(retroweekdate, group, obs, ADMINISTERING_ORG_NAME)
+
+#temp<-dtafirstweeklywhere%>%filter(group==5)
+#table(temp$ADMINISTERING_ORG_NAME)
+
+dtafirstweeklywhere<-dtafirstweeklywhere%>%
+    group_by(retroweekdate, group)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))
+
+temp0<-dtafirstweeklywhere%>%
+    filter(group==0)%>%
+    rename(HCHD = obs)
+
+temp1<-dtafirstweeklywhere%>%
+    filter(group==1)%>%
+    rename(massvax = obs)
+
+temp2<-dtafirstweeklywhere%>%
+    filter(group==2)%>%
+    rename(mobilevax = obs)
+
+temp3<-dtafirstweeklywhere%>%
+    filter(group==3)%>%
+    rename(pharmacy = obs)
+
+temp4<-dtafirstweeklywhere%>%
+    filter(group==4)%>%
+    rename(pedpartner = obs)
+
+temp5<-dtafirstweeklywhere%>%
+    filter(group==5)%>%
+    rename(ped = obs)
+
+temp6<-dtafirstweeklywhere%>%
+    filter(group==6)%>%
+    rename(other = obs)
+
+dim(temp0)
+dim(temp1)
+dim(temp2)
+dim(temp3)
+dim(temp4)
+dim(temp5)
+dim(temp6)
+
+dtafig<-left_join(temp6, temp0, by="retroweekdate")
+dtafig<-left_join(dtafig, temp1, by="retroweekdate")
+dtafig<-left_join(dtafig, temp2, by="retroweekdate")
+dtafig<-left_join(dtafig, temp3, by="retroweekdate")
+dtafig<-left_join(dtafig, temp4, by="retroweekdate")
+dtafig<-left_join(dtafig, temp5, by="retroweekdate")
+```
+
+```{r plot_trend_weekly_people_where_type16, results="asis"}
 dtafig%>%
     plot_ly(x=~retroweekdate,
         y=~HCHD, name="HCHD",
@@ -1093,7 +1408,7 @@ dtafig%>%
         marker=list(color = c("#999999"), size=5))%>%            
     layout(
         barmode = 'stack',
-        title = c(""),
+        title = c("Weekly number of first dose vaccination by type of place"),
         xaxis=list(title = "Date, last in the week",  
                  font=list(size=8),
                  tickfont = list(size=8),
@@ -1104,15 +1419,13 @@ dtafig%>%
                  tickfont = list(size=8),
                  showgrid = FALSE
                  ),
-        legend=list(orientation="v", xanchor = "left", yanchor = "center",
-                    x = 0.05, y = 0.9)
+        legend=list(orientation="v", xanchor = "center", yanchor = "center",
+                    x = 0.5, y = 0.9)
         )
 ```
 
-
-
-### 3.3. What are cumulative weekly trends by age - among those under 20?
-```{r trend_byStatus_weekly_people_age}
+### 3.3. What are the current level and how has it changed, by age group?    
+```{r trend_byStatus_weekly_people_age_same}
 dtafirstweekly<-dta%>%
     filter(dosenumber==1)%>%
     filter(is.na(vdate)==FALSE)%>%
@@ -1148,7 +1461,7 @@ dtacompleteweekly<-dta%>%
     filter(complete==1)%>%
     filter((MANUFACTURER!="JSN" & dosenumber==2) | (MANUFACTURER=="JSN" & dosenumber==1))%>%
     filter(is.na(vdate)==FALSE)%>%
-    filter(age<40)%>%
+    filter(age<20)%>%
     mutate(
         #latest=max(vdate, na.rm = TRUE),
         latest=date-1,
@@ -1190,9 +1503,13 @@ dtaweeklytrendage<-left_join(temp1, temp2, by=c("agegroup", "retroweekdate"))%>%
         pct_cum_complete = round(100*cum_complete/pop, 1) #CUm percent
     )
 
+
+dtaweeklytrendage$agegroup <- factor(dtaweeklytrendage$agegroup, 
+                                  levels = c("5-11", "12-15", "16-19", "20-39"))
+
 ```
 
-```{r plot_trend_byStatus_weekly_people_age, results="asis", out.width="1200px"}
+```{r plot_trend_byStatus_weekly_people_age, results="asis", out.width="1000px"}
 panel <- . %>%
     plot_ly(x=~retroweekdate,
         y=~pct_cum_first, name="First dose (MOD1/PFR1/JSN1)",

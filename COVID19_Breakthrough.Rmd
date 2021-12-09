@@ -11,8 +11,10 @@ output:
 ##### 1. OPEN PYTHON TO DELETE OLD COVID link reports. Them download new reports. NO MORE updating colid-link report numbers. Yay!!!!! 
 ##### 2. date for immunet data
 ##### 3. date for hospitalization data
-date_dtahosp<-"10.29.21"
-date_dtaimmunet<-"10292021"
+date_covidlink<-"12.03.21"
+date_dtahosp<-"12.03.21"
+date_dtaimmunet<-"12032021"
+date_dtaimmunet_text<-"12.03.21"
 
 knitr::opts_chunk$set(echo=FALSE, 
                       message=FALSE, 
@@ -54,11 +56,12 @@ suppressWarnings(suppressMessages(library(RColorBrewer)))
 
 (Page updated at `r time`)   
 Data from:     
-* COVID Link breakthrough cases data by MDH, as of __10.29.21__       
-* COVID Link VOC/VOI data by MDH, as of __10.29.21__    
-* The number of total new COVID-19 cases by MDH, as of `r date`.        
-* Vaccination data from Immunet, as of __`r date_dtaimmunet`__.     
-* COVID19 hospitalization data by MDH, as of __`r date_dtahosp`__.     
+* COVID Link breakthrough cases data by MDH, as of __`r date_covidlink`__       
+* COVID Link VOC/VOI data by MDH, as of __`r date_covidlink`__    
+* The number of total new COVID-19 cases by MDH, as of __`r date`__           
+* Vaccination data from Immunet, as of __`r date_dtaimmunet_text`__     
+* COVID19 hospitalization data by MDH, as of __`r date_dtahosp`__     
+
 See Annex for detailed note about the data.   
 
 ```{r check_covidlink_reports, eval=FALSE}
@@ -282,7 +285,7 @@ dtabreak<-dtabreak%>%
         death=ifelse(is.na(death)==TRUE, "No", death),
         hosp=ifelse(is.na(hosp)==TRUE, "No", hosp), 
         date = as.Date(First.Specimen.Collection.Date, "%m/%d/%Y"),
-        #last30=(Sys.Date() - date<=30) & (date<Sys.Date()), 
+        last30=(Sys.Date() - date<=30) & (date<Sys.Date()), 
         last42=(Sys.Date() - date<=42) & (date<Sys.Date()) 
         )%>%
     mutate_if(is.factor, as.character)
@@ -311,45 +314,54 @@ dtabreak<-dtabreak%>%
                                   " Not tested"),
 
         Variant.Lineage = replace(Variant.Lineage, 
-                                  grepl("B.1.1.7", Variant.Lineage)==TRUE, 
-                                  "VOC: Alpha (UK)"),
+                                  grepl("B.1.1.7", Variant.Lineage)==TRUE | 
+                                  grepl("Q", Variant.Lineage)==TRUE |
+                                  grepl("Alpha", Variant.Lineage)==TRUE, 
+                                  "VBM: Alpha"),
         Variant.Lineage = replace(Variant.Lineage, 
-                                  grepl("B.1.351", Variant.Lineage)==TRUE, 
-                                  "VOC: Beta (South Africa)"),
+                                  grepl("B.1.351", Variant.Lineage)==TRUE |
+                                  grepl("Beta", Variant.Lineage)==TRUE, 
+                                  "VBM: Beta"),
         Variant.Lineage = replace(Variant.Lineage, 
-                                  grepl("P.1", Variant.Lineage)==TRUE, 
-                                  "VOC: Gamma (Japan/Brazil)"),
+                                  grepl("P.1", Variant.Lineage)==TRUE |
+                                  grepl("Gamma", Variant.Lineage)==TRUE, 
+                                  "VBM: Gamma"),
+        
         Variant.Lineage = replace(Variant.Lineage, 
                                   grepl("B.1.617.2", Variant.Lineage)==TRUE |
                                   grepl("AY", Variant.Lineage)==TRUE |
                                   grepl("Delta", Variant.Lineage)==TRUE, 
-                                  "VOC: Delta (India)"),
+                                  "VOC: Delta"),
         
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.427", Variant.Lineage)==TRUE |
+                                  grepl("B.1.429", Variant.Lineage)==TRUE |
+                                  grepl("Epsilon", Variant.Lineage)==TRUE, 
+                                  "VBM: Epsilon"),        
         Variant.Lineage = replace(Variant.Lineage, 
                                   grepl("B.1.525", Variant.Lineage)==TRUE |
                                   grepl("Eta", Variant.Lineage)==TRUE, 
-                                  "VOI: Eta"),
+                                  "VBM: Eta"),
         Variant.Lineage = replace(Variant.Lineage, 
                                   grepl("B.1.526", Variant.Lineage)==TRUE|
                                   grepl("Iota", Variant.Lineage)==TRUE, 
-                                  "VOI: Iota (US/NY)"),
+                                  "VBM: Iota"),
         Variant.Lineage = replace(Variant.Lineage, 
-                                  grepl("B.1.617.1", Variant.Lineage)==TRUE|
+                                  grepl("B.1.617.1", Variant.Lineage)==TRUE |
                                   grepl("Kappa", Variant.Lineage)==TRUE, 
-                                  "VOI: Kappa (India)"),
+                                  "VBM: Kappa"),
         Variant.Lineage = replace(Variant.Lineage, 
                                   grepl("B.1.617.3", Variant.Lineage)==TRUE, 
-                                  "VOI: 20A (India)")
-        
-#        Variant.Lineage = replace(Variant.Lineage, 
-#                                  grepl("B.1.427", Variant.Lineage)==TRUE, 
-#                                  "VOI: Epsilon (US/CA)"),
-#        Variant.Lineage = replace(Variant.Lineage, 
-#                                  grepl("B.1.429", Variant.Lineage)==TRUE, 
-#                                  "VOI: Epsilon (US/CA)"),
-#        Variant.Lineage = replace(Variant.Lineage, 
-#                                  grepl("P2", Variant.Lineage)==TRUE, 
-#                                  "V other: Zeta (Brazil)")
+                                  "VBM: N/A no name"), 
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("P2", Variant.Lineage)==TRUE|
+                                  grepl("Zeta", Variant.Lineage)==TRUE, 
+                                  "VBM: Zeta"), 
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.621", Variant.Lineage)==TRUE|
+                                  grepl("B.1.621.1", Variant.Lineage)==TRUE|
+                                  grepl("Mu", Variant.Lineage)==TRUE, 
+                                  "VBM: Mu")
 )
 
 #table(dtabreak$Variant.Lineage)
@@ -359,8 +371,10 @@ dtabreak<-dtabreak%>%
     mutate(
         Variant.Lineage = replace(Variant.Lineage, 
                                   Lineage.Type!="" & 
+                                  grepl("VBM:", Variant.Lineage)==FALSE & 
                                   grepl("VOC:", Variant.Lineage)==FALSE & 
-                                  grepl("VOI:", Variant.Lineage)==FALSE, 
+                                  grepl("VOI:", Variant.Lineage)==FALSE & 
+                                  grepl("VOHC:", Variant.Lineage)==FALSE, 
                                   "Wild Type")
     )
 table(dtabreak$Variant.Lineage, dtabreak$Lineage.Type)
@@ -969,76 +983,24 @@ tempcases<-dtaapicases%>%
     filter(county =="Harford")%>% 
     
     mutate(
-        latest=max(date)
+        #latest=max(date)
+        latest=to
         )%>%
     filter(latest-date>=0 & latest-date<=6)
 
 ncaselastweek<-max(tempcases$cases) - min(tempcases$cases)
 ncaselastweek
-fromcase<-max(tempcases$date)-6
-tocase<-max(tempcases$date)
-```
 
-```{r}
-pctbreak<-round(100*nbreaklastweek/ncaselastweek, 1)
-
-#__In Harford County in the past 7 days__ (i.e., specimen collected between `r from` and `r to`), __a total of `r nbreaklastweek` breakthrough cases were reported__. This is `r pctbreak`% of new cases reported in the county last week (n=`r ncaselastweek` new cases between `r fromcase` and `r tocase`). 
-
-```
-
-```{r}
-temp<-dtabreak%>%
-    #likely data error in "date"" in a non HC case! 
-    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
-    mutate(
-        latest=max(date),
-        today=as.Date(Sys.time(	), format="%m/%d/%Y")
-        )%>%
-    #filter(latest-date<=6)
-    filter(today-date<=7)
-
-nbreaklastweek<-nrow(temp)
-#from<-max(temp$date)-6
-#to<-max(temp$date)
-from<-max(temp$today)-7
-to<-max(temp$today)-1
-nbreaklastweek 
-from
-to
 table(temp$date)
-
-```
-
-```{r APIdtabycountyCases_MD}
-
-tempcases<-dtaapicases%>%
-    mutate(date=as.Date(DATE))%>%
-    select(-OBJECTID, -DATE)%>%
-    
-    #likely data error in "date"" in a non HC case! 
-    filter(date<as.Date(Sys.time(	), format="%m/%d/%Y"))%>% 
-    gather(county, cases, countylist)%>%    
-    #filter(county =="Harford")%>% 
-    
-    group_by(date)%>%
-    summarize_at(vars(cases), funs(sum(., na.rm = TRUE)))%>%
-    ungroup()%>%
-
-    mutate(
-        latest=max(date)
-        )%>%
-    filter(latest-date>=0 & latest-date<=6)
-
-ncaselastweek<-max(tempcases$cases) - min(tempcases$cases)
-ncaselastweek
 fromcase<-max(tempcases$date)-6
 tocase<-max(tempcases$date)
+
+fromcase
+tocase
 ```
 
 ```{r}
 pctbreak<-round(100*nbreaklastweek/ncaselastweek, 1)
-
-#__In Maryland in the past 7 days__ (i.e., specimen collected between `r from` and `r to`), __a total of `r nbreaklastweek` breakthrough cases were reported__. This is `r pctbreak`% of new cases reported in the State last week (n=`r ncaselastweek` new cases between `r fromcase` and `r tocase`). 
 ```
 
 ```{r dta_trend_7day_rollingdaily}
@@ -1149,20 +1111,31 @@ dtafig<-dtafig%>%
 #conflict_prefer("layout", "plotly")
 
 dtafig%>%
-    plot_ly(x=~date, 
+    #filter(date>=as.Date("2021-03-01"))%>%  
+    filter(date>=as.Date("2021-03-01"))%>%
+    plot_ly(x=~date
+            )%>%
+    add_lines( 
         y=~level_casesnonvac, name="Non-fully vaccinated", 
         type = 'scatter', mode='lines',
         line=list(color = c("#d62728")),
-        marker=list(color = c("#d62728"), size=1))%>%
+        hoverinfo = 'text',
+        text = ~paste('</br> Date: ', date,
+                      '</br> 7-day new cases: ', level_casesnonvac, 'per 100K non-fully vaccinated') 
+        )%>%
     add_lines( 
         y=~level_breakthrough, name="Fully vaccinated", 
-        line=list(color = c("#1f77b4"))
+        line=list(color = c("#1f77b4")),
+        hoverinfo = 'text',
+        text = ~paste('</br> Date: ', date,
+                      '</br> 7-day new cases: ', level_breakthrough, 'per 100K fully vaccinated') 
         )%>%        
     add_lines(
         y=~level_cases, name="Overall", 
-        line=list(color = c("#999999")))%>%    
+        line=list(color = c("#999999"), 
+                  width = 4))%>%    
     layout(
-        title = c("7-day New cases: overall, non-fully vaccinated, vs. fully vaccinated"),
+        title = c("7-day new cases per 100,000 population by vaccination status"),
         xaxis=list(title = "Date",  
                  font=list(size=10),
                  tickfont = list(size=10),
@@ -1175,7 +1148,7 @@ dtafig%>%
                  ),
         legend = list(font=list(size=12), 
                   orientation = "v", xanchor = "left",  
-                  x=0.05, y=0.75)    
+                  x=0.7, y=0.95)    
         )    
 
 #<span style="color: red;">__But, this is puzzling...__     
@@ -1187,6 +1160,7 @@ dtafig%>%
 #- Still, hospitalization cases are mainly those unvaxed. Odds is about 10 times higher in the last two weeks among unvaxed.... </span>    
 
 ```
+
 Note:   
 * Non breakthrough cases = total cases - breakthrough cases. This assumes date in total cases is based specimens collection date, which was used in breakthrough case data. This may not be correct, but the implication is minor as long as there is only minimal report delay.    
 * Fully vaccinated population on day X = population who received second/final dose 14 days ago (X-14).    
@@ -1200,8 +1174,7 @@ dtafig%>%
     plot_ly(x=~date, 
         y=~popnonvac, name="Non-fully vaccinated", 
         type = 'scatter', mode='lines',
-        line=list(color = c("#d62728")),
-        marker=list(color = c("#d62728"), size=1))%>%
+        line=list(color = c("#d62728")))%>%
     add_lines( 
         y=~popvac, name="Fully vaccinated", 
         line=list(color = c("#1f77b4"))
@@ -2051,6 +2024,10 @@ temp3<-rbind(temp3title, temp3)%>%mutate(groupnum=3)
 #temp4<-rbind(temp4title, temp4)%>%mutate(groupnum=4)
 temp5<-rbind(temp5title, temp5)%>%mutate(groupnum=5)
 
+
+#temp1$group <- factor(temp1$group,
+#                      levels = c("11 and Under", "12-19","20-29","30-39","40-49","50-59","60-69","70+"))
+
 dtasummaryrecent<- rbind(temp1, temp1a, temp1b, temp2, temp3, temp5)
 
 dtasummaryrecent<-dtasummaryrecent%>%
@@ -2270,6 +2247,9 @@ temp3<-rbind(temp3title, temp3)%>%mutate(groupnum=3)
 #temp4<-rbind(temp4title, temp4)%>%mutate(groupnum=4)
 temp5<-rbind(temp5title, temp5)%>%mutate(groupnum=5)
 
+#temp1$group <- factor(temp1$group,
+#                      levels = c("11 and Under", "12-19","20-29","30-39","40-49","50-59","60-69","70+"))
+
 dtasummaryolder<- rbind(temp1, temp1a, temp1b, temp2, temp3, temp5) 
 
 
@@ -2334,6 +2314,9 @@ names(dtasummary)<-c("Group",
                      "Prior to the last 6 weeks: MD, Number",
                      "Prior to the last 6 weeks: MD, %"
                      ) 
+
+
+
 ```
 
 ```{r table_breakthrough_by_period, results="asis"}
@@ -2616,19 +2599,31 @@ dim(dtaredcaphosp)
 
 ### 3. Trends in variants of concern/interest among ALL CASES (not just breakthrough cases) in the past 6 months
 
-The list of VOC and VOI updated as of __September 17, 2021__.  
+<div class="alert alert-info">
+The list of VBM, VOI, VOC, and VOHC updated as of __November 30, 2021__.  
+https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html
 
-__Variants of concern__: https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html#Concern       
-* B.1.1.7 (Alpha),     
-* B.1.351 (Beta),    
-* B.1.617.2 + AY... (Delta),     
-* P.1 (Gamma)   
+__Variants Being Monitored (VBM)__:     
+* Alpha: B.1.1.7 and Q lineages   
+* Beta:	B.1.351 and descendent lineages   
+* Gamma: P.1 and descendent lineages   
+* Epsilon: B.1.427, B.1.429   
+* Eta	B.1.525   
+* Iota	B.1.526   
+* Kappa	B.1.617.1    
+* N/A: B.1.617.3 (No name - 20A)     
+* Zeta:	P.2    
+* Mu:	B.1.621, B.1.621.1    
 
-__Variants of interest__: https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html#Interest     
-* B.1.525 (Eta),     
-* B.1.526 (Iota),     
-* B.1.617.1 (Kappa), and       
-* B.1.617.3 (No name - 20A)     
+__Variants of interest (VOI)__:      
+Currently none.   
+
+__Variants of Concern (VOC)__:   
+* Delta: B.1.617.2 and AY lineages
+
+__Variant of High Consequence (VOHC)__: 
+Currently none.   
+</div>
 
 See Annex regarding further information on variant testing in Maryland. 
 
@@ -2652,32 +2647,68 @@ dtavoc<-dtavoc%>%
     #rename variants
     mutate(
         Variant.Lineage=as.character(Variant.Lineage), 
-        Variant.Lineage = replace(Variant.Lineage, Variant.Lineage=="", " Not tested"),
-        
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.1.7", Variant.Lineage)==TRUE, "VOC: Alpha (UK)"),
-    
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.351", Variant.Lineage)==TRUE, "VOC: Beta (South Africa)"),
-        
-        Variant.Lineage = replace(Variant.Lineage, grepl("P.1", Variant.Lineage)==TRUE, "VOC: Gamma (Brazil)"),
-        
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.617.2", Variant.Lineage)==TRUE, "VOC: Delta (India)"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("AY.1", Variant.Lineage)==TRUE, "VOC: Delta (India)"), 
-        Variant.Lineage = replace(Variant.Lineage, grepl("AY.2", Variant.Lineage)==TRUE, "VOC: Delta (India)"), 
-        
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.427", Variant.Lineage)==TRUE, "VOI: Epsilon (US/CA)"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.429", Variant.Lineage)==TRUE, "VOI: Epsilon (US/CA)"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.525", Variant.Lineage)==TRUE, "VOI: Eta"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.526", Variant.Lineage)==TRUE, "VOI: Iota (US/NY)"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.617.1", Variant.Lineage)==TRUE, "VOI: Kappa (India)"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("B.1.617.3", Variant.Lineage)==TRUE, "VOI: 20A (India)"),
-        Variant.Lineage = replace(Variant.Lineage, grepl("P2", Variant.Lineage)==TRUE, "V other: Zeta (Brazil)"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  Variant.Lineage=="", 
+                                  " Not tested"),
 
         Variant.Lineage = replace(Variant.Lineage, 
-                                    grepl("VOC", Variant.Lineage)==FALSE &
-                                    grepl("VOI", Variant.Lineage)==FALSE &
-                                    grepl("other", Variant.Lineage)==FALSE &
-                                    grepl("Not tested", Variant.Lineage)==FALSE, 
-                                    "Wild type")
+                                  grepl("B.1.1.7", Variant.Lineage)==TRUE | 
+                                  grepl("Q", Variant.Lineage)==TRUE |
+                                  grepl("Alpha", Variant.Lineage)==TRUE, 
+                                  "VBM: Alpha"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.351", Variant.Lineage)==TRUE |
+                                  grepl("Beta", Variant.Lineage)==TRUE, 
+                                  "VBM: Beta"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("P.1", Variant.Lineage)==TRUE |
+                                  grepl("Gamma", Variant.Lineage)==TRUE, 
+                                  "VBM: Gamma"),
+        
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.617.2", Variant.Lineage)==TRUE |
+                                  grepl("AY", Variant.Lineage)==TRUE |
+                                  grepl("Delta", Variant.Lineage)==TRUE, 
+                                  "VOC: Delta"),
+        
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.427", Variant.Lineage)==TRUE |
+                                  grepl("B.1.429", Variant.Lineage)==TRUE |
+                                  grepl("Epsilon", Variant.Lineage)==TRUE, 
+                                  "VBM: Epsilon"),        
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.525", Variant.Lineage)==TRUE |
+                                  grepl("Eta", Variant.Lineage)==TRUE, 
+                                  "VBM: Eta"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.526", Variant.Lineage)==TRUE|
+                                  grepl("Iota", Variant.Lineage)==TRUE, 
+                                  "VBM: Iota"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.617.1", Variant.Lineage)==TRUE |
+                                  grepl("Kappa", Variant.Lineage)==TRUE, 
+                                  "VBM: Kappa"),
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.617.3", Variant.Lineage)==TRUE, 
+                                  "VBM: N/A no name"), 
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("P2", Variant.Lineage)==TRUE|
+                                  grepl("Zeta", Variant.Lineage)==TRUE, 
+                                  "VBM: Zeta"), 
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("B.1.621", Variant.Lineage)==TRUE|
+                                  grepl("B.1.621.1", Variant.Lineage)==TRUE|
+                                  grepl("Mu", Variant.Lineage)==TRUE, 
+                                  "VBM: Mu"),
+
+        Variant.Lineage = replace(Variant.Lineage, 
+                                  grepl("VBM", Variant.Lineage)==FALSE &  
+                                  grepl("VOC", Variant.Lineage)==FALSE &
+                                  grepl("VOI", Variant.Lineage)==FALSE &
+                                  grepl("VOHC", Variant.Lineage)==FALSE &
+                                  grepl("other", Variant.Lineage)==FALSE &
+                                  grepl("Not tested", Variant.Lineage)==FALSE, 
+                                  "Wild type")
     )
 
 #table(dtavoc$Variant.Lineage)
@@ -2753,7 +2784,7 @@ dtafig%>%
 
 ```
 
-### 4. Among Harford county residents who were hospitalized, vaccination status at the time of specimen collection - weekly trends
+### 4. Among Harford county residents who were hospitalized, vaccination status at the time of specimen collection - weekly trends since March 2021 and monthly trends since the beginning of the pandemic      
 
 Below figures are weekly trends for Harford county, based on MDH's "__Weekly COVID Hospitalizations Line List__", received on `r date_dtahosp`.
 
@@ -2841,6 +2872,9 @@ temp<-dtahosp%>%
 ```
 
 #### 4.1. Broken down only by vaccine status
+
+<span style="color: red;">Note: These are absolute number of hospitalization cases. The rate of hospitalization is lower among full-vaccinated people than among non-fully vaccinated people, even when the absolute numbers appear to be similar.</span>    
+
 ```{r dtahospweekly_vaxstatus}
 datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
 
@@ -2863,7 +2897,7 @@ dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
     filter(is.na(vaxstatus)==FALSE)
 
 dtahospweekly<-dtahospdaily%>%
-    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    filter(retroweekdate>=as.Date("2021-03-01"))%>% #in 2021 
     group_by(retroweekdate, vaxstatus)%>%
     summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
     ungroup()
@@ -2929,7 +2963,95 @@ dtafig%>%
 
 ```
 
+```{r dtahospmonthly_vaxstatus}
+datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
+
+dtahospdaily<-dtahosp%>%
+    group_by(date, vaxstatus)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+dim(dtahospdaily)
+
+dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retromonth =  floor((latest-date)/30)
+    )%>%
+    group_by(retromonth)%>%
+    mutate(retromonthdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+    
+    filter(is.na(vaxstatus)==FALSE)
+
+dtahospmonthly<-dtahospdaily%>%
+    group_by(retromonthdate, vaxstatus)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+dim(dtahosp)
+dim(dtahospmonthly)
+
+table(dtahosp$vaxstatus)
+table(dtahospdaily$vaxstatus)
+table(dtahospmonthly$vaxstatus)
+    
+```
+
+```{r plot_trend_monthly_vaxstatus_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospmonthly
+
+dtafig%>% 
+    plot_ly(x = ~retromonthdate,
+            y = ~obs, type = "bar",
+             color= ~vaxstatus, 
+             #colors = brewer.pal(length(unique(dtafig$vaxstatus)),"Spectral")
+            colors = c('#d62728','#ffffbf','#1f77b4')
+             ) %>% 
+    layout(
+        title = c("Monthly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "Number of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retromonthdate)-7, max(dtafig$retromonthdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 0.05, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_monthly_vaxstatus_hosp_pct, results="asis", out.width="1000px"}
+dtafig%>% 
+    group_by(retromonthdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retromonthdate,
+            y = ~pct, type = "bar",
+            color= ~vaxstatus, 
+             #colors = brewer.pal(length(unique(dtafig$vaxstatus)), "Spectral")
+            colors = c('#d62728','#ffffbf','#1f77b4')
+            ) %>% 
+    layout(
+        title = c("Monthly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "percent of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retromonthdate)-7, max(dtafig$retromonthdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
 #### 4.2. Broken down by vaccine status AND age group
+
+<span style="color: red;">Note: These are absolute number of hospitalization cases. The rate of hospitalization is lower among full-vaccinated people than among non-fully vaccinated people, even when the absolute numbers appear to be similar.</span>    
 ```{r dtahospweekly_agevaxstatus}
 datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
 
@@ -2952,7 +3074,7 @@ dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
     filter(is.na(agevaxstatus)==FALSE)
 
 dtahospweekly<-dtahospdaily%>%
-    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    filter(retroweekdate>=as.Date("2021-03-01"))%>% #in 2021 
     group_by(retroweekdate, agevaxstatus)%>%
     summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
     ungroup()
@@ -3009,12 +3131,11 @@ dtafig%>%
 
 ```
 
-#### 4.3. Broken down only by age group
-```{r dtahospweekly_age60}
+```{r dtahospmonthly_agevaxstatus}
 datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
 
 dtahospdaily<-dtahosp%>%
-    group_by(date, age60)%>%
+    group_by(date, agevaxstatus)%>%
     summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
     ungroup()
 dim(dtahospdaily)
@@ -3022,66 +3143,62 @@ dim(dtahospdaily)
 dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
     mutate(
         latest  =max(date, na.rm = TRUE),
-        retroweek =  floor((latest-date)/7)
-        #retroweek =  floor((latest-date)/14)
+        retromonth =  floor((latest-date)/30)
     )%>%
-    group_by(retroweek)%>%
-    mutate(retroweekdate= max(date, na.rm = TRUE))%>%
+    group_by(retromonth)%>%
+    mutate(retromonthdate= max(date, na.rm = TRUE))%>%
     ungroup()%>%
     
-    filter(is.na(age60)==FALSE)
+    filter(is.na(agevaxstatus)==FALSE)
 
-dtahospweekly<-dtahospdaily%>%
-    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
-    group_by(retroweekdate, age60)%>%
+dtahospmonthly<-dtahospdaily%>%
+    group_by(retromonthdate, agevaxstatus)%>%
     summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
     ungroup()
 
     
 ```
 
-```{r plot_trend_weekly_age60_hosp, results="asis", out.width="1000px"}
-dtafig<-dtahospweekly
+```{r plot_trend_monthly_agevaxstatus_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospmonthly
 
 dtafig%>% 
-    plot_ly(x = ~retroweekdate,
+    plot_ly(x = ~retromonthdate,
             y = ~obs, type = "bar",
-             color= ~age60, 
-             colors = brewer.pal(length(unique(dtafig$age60)),
-                                "Spectral")
+             color= ~agevaxstatus, 
+             colors = c('#d62728','#e57575','#ffffbf','#1f77b4', '#70A8D6')
              ) %>% 
     layout(
-        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        title = c("Monthly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
         yaxis = list(title = "Number of hospitalization cases",
                      titlefont=list(size=12)), 
         xaxis = list(title = "Data of specimen collection",
-                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+                     range=c(min(dtafig$retromonthdate)-7, max(dtafig$retromonthdate)+7)),
         legend=list(orientation="v", 
                     xanchor = "left", yanchor = "center", 
-                    x = 1.01, y = 0.9,
+                    x = 0.05, y = 0.9,
                     font=list(size=10)),         
         barmode = 'stack'
         )
 ```
 
-```{r plot_trend_weekly_age60_hosp_pct, results="asis", out.width="1000px"}
+```{r plot_trend_monthly_agevaxstatus_hosp_pct, results="asis", out.width="1000px"}
 dtafig%>% 
-    group_by(retroweekdate)%>%
+    group_by(retromonthdate)%>%
     mutate(total=sum(obs))%>%
     ungroup()%>%
     mutate(pct=round(100*obs/total, 1))%>%
     
-    plot_ly(x = ~retroweekdate,
+    plot_ly(x = ~retromonthdate,
             y = ~pct, type = "bar",
-             color= ~age60, 
-             colors = brewer.pal(length(unique(dtafig$age60)),
-                                "Spectral")            ) %>% 
+             color= ~agevaxstatus, 
+             colors = c('#d62728','#e57575','#ffffbf','#1f77b4', '#70A8D6')             ) %>% 
     layout(
-        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        title = c("Monthly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
         yaxis = list(title = "percent of hospitalization cases",
                      titlefont=list(size=12)), 
         xaxis = list(title = "Data of specimen collection",
-                     range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+                     range=c(min(dtafig$retromonthdate)-7, max(dtafig$retromonthdate)+7)),
         legend=list(orientation="v", 
                     xanchor = "left", yanchor = "center", 
                     x = 1.01, y = 0.9,
@@ -3091,7 +3208,7 @@ dtafig%>%
 
 ```
 
-#### 4.4. Broken down only by detailed age group
+#### 4.3. Broken down only by detailed age group
 ```{r dtahospweekly_agegroup}
 datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
 
@@ -3114,7 +3231,7 @@ dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
     filter(is.na(agegroup)==FALSE)
 
 dtahospweekly<-dtahospdaily%>%
-    filter(retroweekdate>=as.Date("2021-01-01"))%>% #in 2021 
+    filter(retroweekdate>=as.Date("2021-03-01"))%>% #in 2021 
     group_by(retroweekdate, agegroup)%>%
     summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
     ungroup()
@@ -3159,11 +3276,91 @@ dtafig%>%
              colors = brewer.pal(length(unique(dtafig$agegroup)),
                                 "Spectral")            ) %>% 
     layout(
-        title = c("Weekly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        title = c("Weekly distribution of hospitalization cases by age: Harford"),
         yaxis = list(title = "percent of hospitalization cases",
                      titlefont=list(size=12)), 
         xaxis = list(title = "Data of specimen collection",
                      range=c(min(dtafig$retroweekdate)-7, max(dtafig$retroweekdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 1.01, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+
+```
+
+```{r dtahospmonthly_agegroup}
+datesequence <- data.frame(date=seq(min(dtahosp$date),max(dtahosp$date), by='1 day'))
+
+dtahospdaily<-dtahosp%>%
+    group_by(date, agegroup)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+dim(dtahospdaily)
+
+dtahospdaily<-full_join(datesequence, dtahospdaily, by="date")%>%
+    mutate(
+        latest  =max(date, na.rm = TRUE),
+        retromonth =  floor((latest-date)/30)
+    )%>%
+    group_by(retromonth)%>%
+    mutate(retromonthdate= max(date, na.rm = TRUE))%>%
+    ungroup()%>%
+    
+    filter(is.na(agegroup)==FALSE)
+
+dtahospmonthly<-dtahospdaily%>%
+    group_by(retromonthdate, agegroup)%>%
+    summarize_at(vars(obs), funs(sum(., na.rm = TRUE)))%>%
+    ungroup()
+
+    
+```
+
+```{r plot_trend_monthly_agegroup_hosp, results="asis", out.width="1000px"}
+dtafig<-dtahospmonthly
+
+dtafig%>% 
+    plot_ly(x = ~retromonthdate,
+            y = ~obs, type = "bar",
+             color= ~agegroup, 
+             colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")
+             ) %>% 
+    layout(
+        title = c("Monthly distribution of hospitalization cases by age: Harford"),
+        yaxis = list(title = "Number of hospitalization cases",
+                     titlefont=list(size=12),
+                     range=c(as.Date("2020-03-1"), as.Date("2022-01-01"))), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retromonthdate)-7, max(dtafig$retromonthdate)+7)),
+        legend=list(orientation="v", 
+                    xanchor = "left", yanchor = "center", 
+                    x = 0.05, y = 0.9,
+                    font=list(size=10)),         
+        barmode = 'stack'
+        )
+```
+
+```{r plot_trend_monthly_agegroup_hosp_pct, results="asis", out.width="1000px"}
+dtafig%>% 
+    group_by(retromonthdate)%>%
+    mutate(total=sum(obs))%>%
+    ungroup()%>%
+    mutate(pct=round(100*obs/total, 1))%>%
+    
+    plot_ly(x = ~retromonthdate,
+            y = ~pct, type = "bar",
+             color= ~agegroup, 
+             colors = brewer.pal(length(unique(dtafig$agegroup)),
+                                "Spectral")            ) %>% 
+    layout(
+        title = c("Monthly distribution of hospitalization cases by vaccination status at the time of testing*: Harford"),
+        yaxis = list(title = "percent of hospitalization cases",
+                     titlefont=list(size=12)), 
+        xaxis = list(title = "Data of specimen collection",
+                     range=c(min(dtafig$retromonthdate)-7, max(dtafig$retromonthdate)+7)),
         legend=list(orientation="v", 
                     xanchor = "left", yanchor = "center", 
                     x = 1.01, y = 0.9,
